@@ -1,6 +1,5 @@
 use shrust::Shell;
 use crate::equipment::Equipment;
-use std::process::Command;
 
 pub struct EquipmentShell(pub Shell<Equipment>);
 
@@ -11,7 +10,7 @@ impl EquipmentShell {
             println!("\n{}", eq);
             Ok(())
         });
-        shell.new_command("clear", "Clear shell", 0, |_, eq, _args| {
+        shell.new_command("clear", "Clear shell", 0, |_, _eq, _args| {
             print!("\x1B[2J");
             Ok(())
         });
