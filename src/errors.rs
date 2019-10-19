@@ -6,4 +6,6 @@ pub enum SSLNetworkError {
     InvalidPort {
         port: String,
     },
+    #[fail(display = "[ERROR] fail during equipment creation because self certificate was not valid")]
+    EquipmentCreationFailInvalidSelfCertificate {},
 }

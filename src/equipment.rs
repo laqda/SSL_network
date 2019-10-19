@@ -7,6 +7,7 @@ use openssl::rsa::Rsa;
 use openssl::nid::Nid;
 use self::openssl::pkey::{Private, Public};
 use std::fmt::{Display, Formatter, Error};
+use crate::errors::SSLNetworkError;
 
 pub struct Equipment {
     name: String,
@@ -16,7 +17,7 @@ pub struct Equipment {
 }
 
 impl Equipment {
-    pub fn new(port: u32) -> Equipment {
+    pub fn new(port: u32) -> Result<Equipment, SSLNetworkError> {
         let name = format!("Equipment_{}", port);
         let rsa = Rsa::generate(2048).unwrap();
         let mut eq = Equipment {
@@ -26,7 +27,11 @@ impl Equipment {
             rsa,
         };
         eq.certificate = Some(Certificate::self_certified(&eq));
-        eq
+        let public_key = (&eq).get_public_key();
+        match eq.certificate.as_ref().unwrap().0.verify(&public_key).unwrap() {
+            true => Ok(eq),
+            false => Err(SSLNetworkError::EquipmentCreationFailInvalidSelfCertificate {}),
+        }
     }
     pub fn get_public_key(&self) -> PKey<Public> {
         self.certificate.as_ref().unwrap().0.public_key().unwrap()
@@ -42,7 +47,7 @@ impl Display for Equipment {
         write!(f,
                "[name] {}\n\
                 [port] {}\n\
-                [certificate]\n\n{}",
+                [self-certificate]\n\n{}",
                self.name,
                self.port,
                certificate,

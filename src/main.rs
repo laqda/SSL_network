@@ -40,7 +40,7 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
             return Err(SSLNetworkError::InvalidPort {port: String::from_str(arg_port).unwrap()})
         },
     };
-    let eq = equipment::Equipment::new(port);
+    let eq = equipment::Equipment::new(port)?;
     let mut shell = EquipmentShell::new(eq);
     shell.0.run_loop(&mut ShellIO::default());
     Ok(())
