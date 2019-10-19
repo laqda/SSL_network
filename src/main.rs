@@ -8,7 +8,7 @@ use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
 use crate::shell::EquipmentShell;
 use shrust::ShellIO;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 mod equipment;
 mod errors;
@@ -45,7 +45,7 @@ fn main() {
 
 fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
     let arg_address = matches.value_of("address").unwrap();
-    let address: IpAddr::V4 = match arg_address.parse(): IpAddr::V4 {
+    let address: Ipv4Addr = match arg_address.parse() {
         Ok(a) => a,
         Err(_) => {
             return Err(SSLNetworkError::InvalidAddress { address: arg_address.to_string() });
@@ -53,7 +53,7 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
     };
 
     let arg_port = matches.value_of("port").unwrap();
-    let port = match u32::from_str(arg_port) {
+    let port = match u16::from_str(arg_port) {
         Ok(port) => port,
         Err(_) => {
             return Err(SSLNetworkError::InvalidPort { port: arg_port.to_string() });
