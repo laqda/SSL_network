@@ -2,6 +2,8 @@ use shrust::Shell;
 use crate::equipment::Equipment;
 use std::net::{SocketAddr, TcpListener, IpAddr, TcpStream};
 use crate::errors::SSLNetworkError;
+use std::thread;
+use std::sync::{Arc, Mutex};
 
 pub struct EquipmentShell(pub Shell<Equipment>);
 
@@ -22,7 +24,7 @@ impl EquipmentShell {
             println!("[INFO] Start listening {}", address);
             for stream in listener.incoming() {
                 match stream {
-                    Ok(s) => handle_connection(s),
+                    Ok(s) => handle_connection(s, eq),
                     Err(e) => println!("[ERROR] {}", e)
                 };
             }
@@ -50,6 +52,6 @@ impl EquipmentShell {
     }
 }
 
-fn handle_connection(stream: TcpStream) {
-    println!("ok");
+fn handle_connection(stream: TcpStream, eq: &mut Equipment) {
+    println!("ok {}", eq.get_socket_address());
 }
