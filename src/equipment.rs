@@ -8,20 +8,23 @@ use openssl::nid::Nid;
 use self::openssl::pkey::{Private, Public};
 use std::fmt::{Display, Formatter, Error};
 use crate::errors::SSLNetworkError;
+use std::net::IpAddr;
 
 pub struct Equipment {
     name: String,
+    address: IpAddr::V4,
     port: u32,
     certificate: Option<Certificate>,
     rsa: Rsa<Private>,
 }
 
 impl Equipment {
-    pub fn new(port: u32) -> Result<Equipment, SSLNetworkError> {
-        let name = format!("Equipment_{}", port);
+    pub fn new(address: IpAddr::V4, port: u32) -> Result<Equipment, SSLNetworkError> {
+        let name = format!("Equipment_{}:{}", address, port);
         let rsa = Rsa::generate(2048).unwrap();
         let mut eq = Equipment {
             name,
+            address,
             port,
             certificate: None,
             rsa,

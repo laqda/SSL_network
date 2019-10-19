@@ -8,4 +8,8 @@ pub enum SSLNetworkError {
     },
     #[fail(display = "[ERROR] fail during equipment creation because self certificate was not valid")]
     EquipmentCreationFailInvalidSelfCertificate {},
+    #[fail(display = "[ERROR] invalid address : {}", address)]
+    InvalidAddress {
+        address: String,
+    },
 }
