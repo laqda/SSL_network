@@ -39,6 +39,9 @@ impl Equipment {
     pub fn get_public_key(&self) -> PKey<Public> {
         self.certificate.as_ref().unwrap().0.public_key().unwrap()
     }
+    pub fn get_public_key_pem(&self) -> PKey<Public> {
+        self.certificate.as_ref().unwrap().0.public_key_pem().unwrap()
+    }
     pub fn get_socket_address(&self) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(self.address), self.port)
     }
