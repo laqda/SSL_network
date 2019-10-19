@@ -42,7 +42,7 @@ impl Display for Equipment {
         write!(f,
                "[name] {}\n\
                 [port] {}\n\
-                [certificate]\n{}",
+                [certificate]\n\n{}",
                self.name,
                self.port,
                certificate,

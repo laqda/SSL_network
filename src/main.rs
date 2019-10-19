@@ -5,9 +5,12 @@ use crate::errors::SSLNetworkError;
 use std::process;
 use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
+use crate::shell::EquipmentShell;
+use shrust::ShellIO;
 
 mod equipment;
 mod errors;
+mod shell;
 
 fn main() {
     let matches = App::new("ssl_network")
@@ -38,5 +41,7 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
         },
     };
     let eq = equipment::Equipment::new(port);
+    let mut shell = EquipmentShell::new(eq);
+    shell.0.run_loop(&mut ShellIO::default());
     Ok(())
 }
