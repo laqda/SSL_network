@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
+clap = {version = "~2.27.0", features = ["yaml"]}
+failure = "*"
