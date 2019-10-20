@@ -6,6 +6,7 @@ pub struct Packet {
     pub payload: String,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PacketType {
     CONNECT,

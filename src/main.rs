@@ -8,7 +8,7 @@ use std::process;
 use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
 use shrust::ShellIO;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{Ipv4Addr};
 
 mod equipment;
 mod errors;
