@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use failure::_core::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::io::{Write, BufReader, BufRead, BufWriter, stdin, stdout};
+use std::io::{Write, BufReader, BufRead, BufWriter, stdin, stdout, Read};
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -40,45 +40,22 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
 
     let address = eq.get_socket_address();
     let listener = TcpListener::bind(address)?;
-    listener.set_nonblocking(true).expect("Cannot set non-blocking");
-
-    let stop = Arc::new(AtomicBool::new(false)); // stop signal from stdin
 
     drop(eq); // unlock eq
 
     println!("[INFO] Start listening {}", address);
-    let ref_eq_thread = ref_eq.clone();
-    let stop_thread = stop.clone();
 
-    thread::spawn(move || { // spawn a new thread to be able to read stdin in the same time
-        for stream in listener.incoming() {
-            match stream {
-                Ok(s) => {
-                    match server_handle_connection(s, ref_eq_thread.clone()) {
-                        Err(e) => println!("{}", e),
-                        _ => {}
-                    }
+    for stream in listener.incoming() {
+        match stream {
+            Ok(s) => {
+                match server_handle_connection(s, ref_eq.clone()) {
+                    Err(e) => println!("{}", e),
+                    _ => {}
                 }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    if stop_thread.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(100));
-                    continue;
-                }
-                Err(e) => println!("[ERROR] {}", e),
-            };
-        }
-        drop(listener);
-    });
-
-    match io::stdin().read_line(&mut String::new()) {
-        Ok(_) => {
-            stop.store(true, Ordering::Relaxed);
-        }
-        Err(error) => println!("error: {}", error),
+            }
+            Err(e) => println!("[ERROR] {}", e),
+        };
     }
-
     Ok(())
 }
 
@@ -111,16 +88,21 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
 fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let mut eq = ref_eq.lock().unwrap();
 
-    let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
+    let packet: Packet = serde_json::from_str(receive(&stream)?.as_str()).unwrap();
     match packet.packet_type {
         PacketType::CONNECT => {
+            println!("[INFO] Receive connection request");
             let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
             // test exist
             if eq.get_network().contains(&payload.pub_key) {
-                send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()));
+                println!("[INFO] Client is already certified");
+                send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?;
             } else {
-                if allow_certify_new_equipment() {
+                println!("[INFO] Client is not already certified");
+                let allow_client = allow_certify_new_equipment();
+                if allow_client {
                     // add equipment
+                    println!("[INFO] Add client to network");
                     eq.get_network().add_equipment(network::Equipment::new(payload.name.clone(), payload.pub_key.clone()));
 
                     // NEW_CERTIFICATE
@@ -129,17 +111,26 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
                     eq.get_network().add_certification(
                         payload.pub_key.clone(),
                         issuer_pub_key,
-                        certificate.0.to_pem().unwrap()
+                        certificate.0.to_pem().unwrap(),
                     );
 
-                    send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()));
+                    println!("[INFO] Send back new certificate");
+                    send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
                 } else {
-                    send(stream.try_clone().unwrap(), Packet::refused());
+                    send(stream.try_clone().unwrap(), Packet::refused())?;
                 }
             }
         }
         _ => {
             return Err(SSLNetworkError::ConnectionProcessViolation {});
+        }
+    };
+
+    let packet = receive(&stream)?;
+    let packet: Packet = match serde_json::from_str(packet.as_str()) {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(SSLNetworkError::NoConnection {});
         }
     };
 
@@ -150,10 +141,10 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     let eq = ref_eq.lock().unwrap();
 
     // CONNECT
-    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()));
+    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()))?;
 
     // CONNECT response
-    let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
+    let packet: Packet = serde_json::from_str(receive(&stream)?.as_str()).unwrap();
     match packet.packet_type {
         PacketType::ALLOWED => {
             println!("[INFO] Allowed to connect");
@@ -174,28 +165,38 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     Ok(())
 }
 
-fn send(stream: TcpStream, packet: Packet) {
+fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
     let packet = serde_json::to_string(&packet).unwrap() + "\n";
     let mut writer = BufWriter::new(&stream);
-    writer.write_all(packet.as_bytes()).unwrap();
-    writer.flush().unwrap();
-    println!("[INFO] Packet send to {} as {}", stream.peer_addr().unwrap(), stream.local_addr().unwrap());
+    match writer.write_all(packet.as_bytes()) {
+        Err(_) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+        _ => {}
+    };
+    writer.flush();
+    Ok(())
 }
 
-fn receive(stream: &TcpStream) -> String {
+fn receive(stream: &TcpStream) -> Result<String, SSLNetworkError> {
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
-    reader.read_line(&mut response).unwrap();
-    println!("[INFO] Packet receive from {} : {}", stream.peer_addr().unwrap(), response.clone());
-    response
+    match reader.read_line(&mut response) {
+        Err(_) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+        _ => {}
+    };
+    reader.consume(1);
+    Ok(response)
 }
 
 fn allow_certify_new_equipment() -> bool {
     print!("Add new equipment to network (y/N) ? ");
-//    stdout().flush();
-    let mut reader = BufReader::new(stdin());
+    stdout().flush();
     let mut response = String::new();
-    reader.read_line(&mut response).unwrap();
-    println!("response {}", response);
-    response.trim() == "y"
+    io::stdin().read_line(&mut response);
+    let response = response.trim();
+    println!("response : {}", response);
+    response == "y"
 }

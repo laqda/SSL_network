@@ -16,4 +16,6 @@ pub enum SSLNetworkError {
     ConnectionProcessViolation {},
     #[fail(display = "[ERROR] connection refused")]
     ConnectionRefused {},
+    #[fail(display = "[ERROR] connection loss")]
+    NoConnection {},
 }
