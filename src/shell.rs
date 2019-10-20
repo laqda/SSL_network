@@ -116,6 +116,7 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
                     send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
                 } else {
                     send(stream.try_clone().unwrap(), Packet::refused())?;
+                    return Err(SSLNetworkError::ConnectionRefused {});
                 }
             }
         }
@@ -217,6 +218,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
             send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
         } else {
             send(stream.try_clone().unwrap(), Packet::refused())?;
+            return Err(SSLNetworkError::ConnectionRefused {});
         }
     }
 
