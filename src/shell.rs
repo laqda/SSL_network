@@ -108,7 +108,6 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
 
 fn server_handle_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
     let eq = ref_eq.lock().unwrap();
-    println!("[INFO] Packet receive from {}", stream.peer_addr().unwrap());
     let packet: Packet = serde_json::from_str(receive(stream).as_str()).unwrap();
 }
 
@@ -124,6 +123,7 @@ fn send(stream: &mut TcpStream, packet: Packet) {
         }
     };
     stream.flush().unwrap();
+    println!("[INFO] Packet send to {} as {}", stream.peer_addr().unwrap(), stream.local_addr().unwrap());
 }
 
 fn receive(stream: &mut TcpStream) -> String {
@@ -133,5 +133,6 @@ fn receive(stream: &mut TcpStream) -> String {
             panic!("stream error: {:?}", err);
         }
     }
+    println!("[INFO] Packet receive from {}", stream.peer_addr().unwrap());
     String::from_utf8(res).unwrap()
 }
