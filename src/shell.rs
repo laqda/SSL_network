@@ -88,7 +88,7 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
 fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let mut eq = ref_eq.lock().unwrap();
 
-    let packet: Packet = serde_json::from_str(receive(&stream)?.as_str()).unwrap();
+    let packet: Packet = receive(&stream)?;
     match packet.packet_type {
         PacketType::CONNECT => {
             println!("[INFO] Receive connection request");
@@ -127,12 +127,6 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
     };
 
     let packet = receive(&stream)?;
-    let packet: Packet = match serde_json::from_str(packet.as_str()) {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(SSLNetworkError::NoConnection {});
-        }
-    };
 
     Ok(())
 }
@@ -144,7 +138,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()))?;
 
     // CONNECT response
-    let packet: Packet = serde_json::from_str(receive(&stream)?.as_str()).unwrap();
+    let packet: Packet = receive(&stream)?;
     match packet.packet_type {
         PacketType::ALLOWED => {
             println!("[INFO] Allowed to connect");
@@ -178,17 +172,22 @@ fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
     Ok(())
 }
 
-fn receive(stream: &TcpStream) -> Result<String, SSLNetworkError> {
+fn receive(stream: &TcpStream) -> Result<Packet, SSLNetworkError> {
     let mut reader = BufReader::new(stream);
-    let mut response = String::new();
-    match reader.read_line(&mut response) {
+    let mut packet = String::new();
+    match reader.read_line(&mut packet) {
         Err(_) => {
             return Err(SSLNetworkError::NoConnection {});
         }
         _ => {}
     };
-    reader.consume(1);
-    Ok(response)
+    let packet: Packet = match serde_json::from_str(packet.as_str()) {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+    };
+    Ok(packet)
 }
 
 fn allow_certify_new_equipment() -> bool {
@@ -197,6 +196,5 @@ fn allow_certify_new_equipment() -> bool {
     let mut response = String::new();
     io::stdin().read_line(&mut response);
     let response = response.trim();
-    println!("response : {}", response);
     response == "y"
 }
