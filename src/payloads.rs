@@ -2,14 +2,23 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Packet {
-    pub packet_type: String,
+    pub packet_type: PacketType,
     pub payload: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum PacketType {
+    CONNECT,
+    ALLOWED,
+    NEW_CERTIFICATE,
+    REFUSED,
+    CONNECTED,
 }
 
 impl Packet {
     pub fn connect(name: String, pub_key: Vec<u8>) -> Packet {
         Packet {
-            packet_type: "CONNECT".to_string(),
+            packet_type: PacketType::CONNECT,
             payload: serde_json::to_string(
                 &Connect {
                     name,
@@ -20,7 +29,7 @@ impl Packet {
     }
     pub fn allowed(name: String, pub_key: Vec<u8>) -> Packet {
         Packet {
-            packet_type: "ALLOWED".to_string(),
+            packet_type: PacketType::ALLOWED,
             payload: serde_json::to_string(
                 &Allowed {
                     name,
@@ -31,7 +40,7 @@ impl Packet {
     }
     pub fn new_certificate(name: String, pub_key: Vec<u8>, certificate: Vec<u8>) -> Packet {
         Packet {
-            packet_type: "NEW_CERTIFICATE".to_string(),
+            packet_type: PacketType::NEW_CERTIFICATE,
             payload: serde_json::to_string(
                 &NewCertificate {
                     name,
@@ -43,7 +52,7 @@ impl Packet {
     }
     pub fn refused() -> Packet {
         Packet {
-            packet_type: "REFUSED".to_string(),
+            packet_type: PacketType::REFUSED,
             payload: serde_json::to_string(
                 &Connected {}
             ).unwrap(),
@@ -51,7 +60,7 @@ impl Packet {
     }
     pub fn connected() -> Packet {
         Packet {
-            packet_type: "CONNECTED".to_string(),
+            packet_type: PacketType::CONNECTED,
             payload: serde_json::to_string(
                 &Connected {}
             ).unwrap(),
