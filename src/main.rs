@@ -2,17 +2,18 @@ extern crate clap;
 #[macro_use]
 extern crate failure;
 
+use crate::shell::EquipmentShell;
 use crate::errors::SSLNetworkError;
 use std::process;
 use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
-use crate::shell::EquipmentShell;
 use shrust::ShellIO;
 use std::net::{IpAddr, Ipv4Addr};
 
 mod equipment;
 mod errors;
 mod shell;
+mod payloads;
 
 fn main() {
     let matches = App::new("ssl_network")

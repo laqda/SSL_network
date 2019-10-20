@@ -1,12 +1,14 @@
-use shrust::{Shell, ShellIO, ExecResult};
 use crate::equipment::Equipment;
-use std::net::{SocketAddr, TcpListener, IpAddr, TcpStream};
+use crate::payloads;
 use crate::errors::SSLNetworkError;
+use shrust::{Shell, ShellIO, ExecResult};
+use std::net::{SocketAddr, TcpListener, IpAddr, TcpStream};
 use std::{thread, io};
 use std::sync::{Arc, Mutex};
 use failure::_core::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use std::io::{Write, Read};
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -50,10 +52,10 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
     thread::spawn(move || { // spawn a new thread to be able to read stdin in the same time
         for stream in listener.incoming() {
             match stream {
-                Ok(s) => {
-                    handle_connection(s, ref_eq_thread.clone());
-                    println!("Press [ENTER] to continue");
-                    break;
+                Ok(mut s) => {
+                    server_handle_connection(&mut s, ref_eq_thread.clone());
+//                    println!("Press [ENTER] to continue");
+//                    break;
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if stop_thread.load(Ordering::Relaxed) {
@@ -78,11 +80,6 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
     Ok(())
 }
 
-fn handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
-    let eq = ref_eq.lock().unwrap();
-    println!("receive connection and access equipment {}", eq.get_socket_address());
-}
-
 fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipment>>, args: &[&str]) -> ExecResult {
     let eq = ref_eq.lock().unwrap();
 
@@ -100,5 +97,36 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
             return Ok(());
         }
     };
+
+    drop(eq);
+    client_connection(&mut stream, ref_eq.clone());
     Ok(())
+}
+
+fn server_handle_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+    let eq = ref_eq.lock().unwrap();
+
+    let mut res = vec![];
+    while let Err(err) = stream.read_to_end(&mut res) {
+        if err.kind() != io::ErrorKind::WouldBlock {
+            panic!("stream error: {:?}", err);
+        }
+    }
+
+    println!("receive connection and access equipment {}", eq.get_socket_address());
+    println!("{}", String::from_utf8_lossy(&res));
+}
+
+fn client_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+    let eq = ref_eq.lock().unwrap();
+    send(stream, serde_json::to_string(&payloads::Connect { name: eq.to_string(), pub_key: eq.get_public_key_pem() }).unwrap());
+}
+
+fn send(stream: &mut TcpStream, payload: String) {
+    while let Err(err) = stream.write_all(payload.clone().as_bytes()) {
+        if err.kind() != io::ErrorKind::WouldBlock {
+            panic!("error: {:?}", err);
+        }
+    }
+    stream.flush().unwrap();
 }

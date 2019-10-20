@@ -1,14 +1,14 @@
 extern crate openssl;
 
+use crate::errors::SSLNetworkError;
 use openssl::x509::{X509, X509Name};
 use openssl::pkey::PKey;
 use openssl::hash::MessageDigest;
 use openssl::rsa::Rsa;
 use openssl::nid::Nid;
-use self::openssl::pkey::{Private, Public};
 use std::fmt::{Display, Formatter, Error};
-use crate::errors::SSLNetworkError;
 use std::net::{IpAddr, SocketAddr, Ipv4Addr};
+use self::openssl::pkey::{Private, Public};
 
 pub struct Equipment {
     name: String,
@@ -39,8 +39,8 @@ impl Equipment {
     pub fn get_public_key(&self) -> PKey<Public> {
         self.certificate.as_ref().unwrap().0.public_key().unwrap()
     }
-    pub fn get_public_key_pem(&self) -> PKey<Public> {
-        self.certificate.as_ref().unwrap().0.public_key_pem().unwrap()
+    pub fn get_public_key_pem(&self) -> Vec<u8> {
+        self.certificate.as_ref().unwrap().0.to_pem().unwrap()
     }
     pub fn get_socket_address(&self) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(self.address), self.port)
