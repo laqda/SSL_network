@@ -1,6 +1,6 @@
 use crate::equipment::Equipment;
 use crate::payloads;
-use crate::payloads::Packet;
+use crate::payloads::{Packet, PacketType};
 use crate::errors::SSLNetworkError;
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, IpAddr, TcpStream};
@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use failure::_core::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::io::{Write, Read};
+use std::io::{Write, Read, BufReader, BufRead, BufWriter};
 use serde::de::Error;
 use serde_json::error::ErrorCode;
 
@@ -56,7 +56,7 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
         for stream in listener.incoming() {
             match stream {
                 Ok(mut s) => {
-                    server_handle_connection(&mut s, ref_eq_thread.clone());
+                    server_handle_connection(s, ref_eq_thread.clone());
 //                    println!("Press [ENTER] to continue");
 //                    break;
                 }
@@ -102,37 +102,46 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
     };
 
     drop(eq);
-    client_connection(&mut stream, ref_eq.clone());
+    client_connection(stream, ref_eq.clone());
     Ok(())
 }
 
-fn server_handle_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+fn server_handle_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
     let eq = ref_eq.lock().unwrap();
-    let packet: Packet = serde_json::from_str(receive(stream).as_str()).unwrap();
-}
-
-fn client_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
-    let eq = ref_eq.lock().unwrap();
-    send(stream, Packet::connect(eq.get_name(), eq.get_public_key()));
-}
-
-fn send(stream: &mut TcpStream, packet: Packet) {
-    while let Err(err) = stream.write_all(serde_json::to_string(&packet).unwrap().as_bytes()) {
-        if err.kind() != io::ErrorKind::WouldBlock {
-            panic!("error: {:?}", err);
+    let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
+    match packet.packet_type {
+        PacketType::CONNECT => {
+            let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
+            // test exist
+            // ask permission to add
+            let certificate = eq.certify(payload.name, payload.pub_key);
+            send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()));
         }
+        PacketType::ALLOWED => {}
+        PacketType::NEW_CERTIFICATE => {}
+        PacketType::REFUSED => {}
+        PacketType::CONNECTED => {}
     };
-    stream.flush().unwrap();
+}
+
+fn client_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+    let eq = ref_eq.lock().unwrap();
+    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()));
+    let packet = receive(&stream);
+}
+
+fn send(mut stream: TcpStream, packet: Packet) {
+    let packet = serde_json::to_string(&packet).unwrap() + "\n";
+    let mut writer = BufWriter::new(&stream);
+    writer.write_all(packet.as_bytes());
+    writer.flush();
     println!("[INFO] Packet send to {} as {}", stream.peer_addr().unwrap(), stream.local_addr().unwrap());
 }
 
-fn receive(stream: &mut TcpStream) -> String {
-    let mut res = vec![];
-    while let Err(err) = stream.read_to_end(&mut res) {
-        if err.kind() != io::ErrorKind::WouldBlock {
-            panic!("stream error: {:?}", err);
-        }
-    }
-    println!("[INFO] Packet receive from {}", stream.peer_addr().unwrap());
-    String::from_utf8(res).unwrap()
+fn receive(stream: &TcpStream) -> String {
+    let mut reader = BufReader::new(stream);
+    let mut response = String::new();
+    reader.read_line(&mut response);
+    println!("[INFO] Packet receive from {} : {}", stream.peer_addr().unwrap(), response.clone());
+    response
 }
