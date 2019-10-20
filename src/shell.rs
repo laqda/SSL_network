@@ -89,7 +89,7 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
         PacketType::CONNECT => {
             let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
             // test exist
-            if eq.get_network().contains(&payload.pub_key) {
+            if eq.get_network().is_verified(payload.pub_key.clone()) {
                 println!("[INFO] Client is already certified");
                 send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?;
             } else {
@@ -190,7 +190,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         }
     };
 
-    if eq.get_network().contains(&pub_key) {
+    if eq.get_network().is_verified(pub_key.clone()) {
         println!("[INFO] Server is already certified");
         send(stream.try_clone().unwrap(), Packet::connected())?;
     } else {

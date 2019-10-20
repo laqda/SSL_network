@@ -34,9 +34,19 @@ impl Network {
         let subject = self.nodes.get(&subject_pub_key).unwrap();
         let issuer = self.nodes.get(&issuer_pub_key).unwrap();
         self.graph.add_edge(NodeIndex::new(issuer.clone()), NodeIndex::new(subject.clone()), cert);
+        if self.graph.node_weight(NodeIndex::new(issuer.clone())).unwrap().verified {
+            let subject = self.graph.node_weight_mut(NodeIndex::new(subject.clone())).unwrap();
+            subject.verified = true;
+            // TODO verify if subject becoming verified implies others to become verified
+        }
     }
-    pub fn contains(&self, pub_key: &Vec<u8>) -> bool {
-        self.nodes.contains_key(pub_key)
+    pub fn is_verified(&self, pub_key: Vec<u8>) -> bool {
+        if self.nodes.contains_key(&pub_key) {
+            let node = self.nodes.get(&pub_key).unwrap();
+            let node = self.graph.node_weight(NodeIndex::new(node.clone())).unwrap();
+            return node.verified;
+        }
+        false
     }
 }
 
@@ -44,6 +54,7 @@ impl Network {
 pub struct Equipment {
     name: String,
     pub_key: Vec<u8>,
+    pub verified: bool,
 }
 
 impl Equipment {
@@ -51,6 +62,14 @@ impl Equipment {
         Equipment {
             name,
             pub_key,
+            verified: false,
+        }
+    }
+    pub fn root(name: String, pub_key: Vec<u8>) -> Equipment {
+        Equipment {
+            name,
+            pub_key,
+            verified: true,
         }
     }
 }

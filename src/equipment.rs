@@ -36,7 +36,7 @@ impl Equipment {
             port,
             certificate: None,
             rsa,
-            network: Network::new(network::Equipment::new(name_init_network, rsa_init_network.public_key_to_pem().unwrap())),
+            network: Network::new(network::Equipment::root(name_init_network, rsa_init_network.public_key_to_pem().unwrap())),
         };
         eq.self_certify();
         let public_key = PKey::from_rsa(rsa_verify).unwrap();
