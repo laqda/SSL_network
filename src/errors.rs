@@ -12,4 +12,6 @@ pub enum SSLNetworkError {
     InvalidAddress {
         address: String,
     },
+    #[fail(display = "[ERROR] process violation")]
+    ConnectionProcessViolation {}
 }

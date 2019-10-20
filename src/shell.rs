@@ -54,9 +54,10 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
         for stream in listener.incoming() {
             match stream {
                 Ok(s) => {
-                    server_handle_connection(s, ref_eq_thread.clone());
-//                    println!("Press [ENTER] to continue");
-//                    break;
+                    match server_handle_connection(s, ref_eq_thread.clone()) {
+                        Err(e) => println!("{}", e),
+                        _ => {}
+                    }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if stop_thread.load(Ordering::Relaxed) {
@@ -100,11 +101,14 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
     };
 
     drop(eq);
-    client_connection(stream, ref_eq.clone());
+    match client_connection(stream, ref_eq.clone()) {
+        Err(e) => println!("{}", e),
+        _ => {}
+    }
     Ok(())
 }
 
-fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let eq = ref_eq.lock().unwrap();
     let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
     match packet.packet_type {
@@ -115,17 +119,18 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
             let certificate = eq.certify(payload.name, payload.pub_key);
             send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()));
         }
-        PacketType::ALLOWED => {}
-        PacketType::NEW_CERTIFICATE => {}
-        PacketType::REFUSED => {}
-        PacketType::CONNECTED => {}
+        _ => {
+            return Err(SSLNetworkError::ConnectionProcessViolation {});
+        }
     };
+    Ok(())
 }
 
-fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let eq = ref_eq.lock().unwrap();
     send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()));
     let packet = receive(&stream);
+    Ok(())
 }
 
 fn send(stream: TcpStream, packet: Packet) {
