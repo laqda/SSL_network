@@ -113,7 +113,7 @@ fn server_handle_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>
 
 fn client_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
     let eq = ref_eq.lock().unwrap();
-    send(stream, Packet::connect(eq.get_name(), eq.get_public_key_pem()));
+    send(stream, Packet::connect(eq.get_name(), eq.get_public_key()));
 }
 
 fn send(stream: &mut TcpStream, packet: Packet) {

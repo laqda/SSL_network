@@ -22,6 +22,7 @@ impl Equipment {
     pub fn new(address: Ipv4Addr, port: u16) -> Result<Equipment, SSLNetworkError> {
         let name = format!("Equipment_{}:{}", address, port);
         let rsa = Rsa::generate(2048).unwrap();
+        let rsa_verify = rsa.clone();
         let mut eq = Equipment {
             name,
             address,
@@ -30,7 +31,7 @@ impl Equipment {
             rsa,
         };
         eq.certificate = Some(Certificate::self_certified(&eq));
-        let public_key = (&eq).get_public_key();
+        let public_key = PKey::from_rsa(rsa_verify).unwrap();
         match eq.certificate.as_ref().unwrap().0.verify(&public_key).unwrap() {
             true => Ok(eq),
             false => Err(SSLNetworkError::EquipmentCreationFailInvalidSelfCertificate {}),
@@ -39,11 +40,11 @@ impl Equipment {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn get_public_key(&self) -> PKey<Public> {
-        self.certificate.as_ref().unwrap().0.public_key().unwrap()
+    pub fn get_public_key(&self) -> Vec<u8> {
+        self.rsa.public_key_to_pem().unwrap()
     }
-    pub fn get_public_key_pem(&self) -> Vec<u8> {
-        self.certificate.as_ref().unwrap().0.to_pem().unwrap()
+    pub fn get_private_key(&self) -> Vec<u8> {
+        self.rsa.private_key_to_pem().unwrap()
     }
     pub fn get_socket_address(&self) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(self.address), self.port)
