@@ -45,17 +45,16 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
 
     println!("[INFO] Start listening {}", address);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(s) => {
-                match server_handle_connection(s, ref_eq.clone()) {
-                    Err(e) => println!("{}", e),
-                    _ => {}
-                }
+    let stream = listener.accept();
+    match stream {
+        Ok(s) => {
+            match server_handle_connection(s.0, ref_eq.clone()) {
+                Err(e) => println!("{}", e),
+                _ => {}
             }
-            Err(e) => println!("[ERROR] {}", e),
-        };
-    }
+        }
+        Err(e) => println!("[ERROR] {}", e),
+    };
     Ok(())
 }
 
@@ -91,7 +90,6 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
     let packet: Packet = receive(&stream)?;
     match packet.packet_type {
         PacketType::CONNECT => {
-            println!("[INFO] Receive connection request");
             let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
             // test exist
             if eq.get_network().contains(&payload.pub_key) {
@@ -106,10 +104,13 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
                     eq.get_network().add_equipment(network::Equipment::new(payload.name.clone(), payload.pub_key.clone()));
 
                     // NEW_CERTIFICATE
-                    let certificate = eq.certify(payload.name, payload.pub_key.clone());
+                    let certificate = eq.certify(payload.name.clone(), payload.pub_key.clone());
+                    let issuer_name = eq.get_name().clone();
                     let issuer_pub_key = eq.get_public_key().clone();
                     eq.get_network().add_certification(
+                        payload.name.clone(),
                         payload.pub_key.clone(),
+                        issuer_name,
                         issuer_pub_key,
                         certificate.0.to_pem().unwrap(),
                     );
@@ -126,26 +127,20 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
         }
     };
 
+    // IMPLICIT CONNECT FROM SERVER RESPONSE
     let packet = receive(&stream)?;
 
-    Ok(())
-}
-
-fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
-    let eq = ref_eq.lock().unwrap();
-
-    // CONNECT
-    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()))?;
-
-    // CONNECT response
-    let packet: Packet = receive(&stream)?;
     match packet.packet_type {
-        PacketType::ALLOWED => {
+        PacketType::CONNECTED => {
             println!("[INFO] Allowed to connect");
         }
         PacketType::NEW_CERTIFICATE => {
             let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
             println!("[INFO] New certificate from {}", stream.peer_addr().unwrap());
+            let certificate = payload.certificate;
+            let subject_name = eq.get_name().clone();
+            let subject_pub_key = eq.get_public_key().clone();
+            eq.get_network().add_certification(subject_name, subject_pub_key, payload.name, payload.pub_key.clone(), certificate);
             println!("[INFO] Allowed to connect");
         }
         PacketType::REFUSED => {
@@ -156,6 +151,79 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         }
     };
 
+    println!("[INFO] Connected");
+    Ok(())
+}
+
+fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+    let mut eq = ref_eq.lock().unwrap();
+
+    // CONNECT
+    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()))?;
+
+    // CONNECT response
+    let packet: Packet = receive(&stream)?;
+
+    let name: String;
+    let pub_key: Vec<u8>;
+
+    match packet.packet_type {
+        PacketType::ALLOWED => {
+            let payload: payloads::Allowed = serde_json::from_str(packet.payload.as_str()).unwrap();
+            name = payload.name.clone();
+            pub_key = payload.pub_key.clone();
+            println!("[INFO] Allowed to connect");
+        }
+        PacketType::NEW_CERTIFICATE => {
+            let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
+            name = payload.name.clone();
+            pub_key = payload.pub_key.clone();
+            println!("[INFO] New certificate from {}", stream.peer_addr().unwrap());
+            let certificate = payload.certificate;
+            let subject_name = eq.get_name().clone();
+            let subject_pub_key = eq.get_public_key().clone();
+            eq.get_network().add_certification(subject_name, subject_pub_key, payload.name.clone(), pub_key.clone(), certificate);
+            println!("[INFO] Allowed to connect");
+        }
+        PacketType::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::ConnectionProcessViolation {});
+        }
+    };
+
+    if eq.get_network().contains(&pub_key) {
+        println!("[INFO] Server is already certified");
+        send(stream.try_clone().unwrap(), Packet::connected())?;
+    } else {
+        println!("[INFO] Server is not already certified");
+        let allow_server = allow_certify_new_equipment();
+        if allow_server {
+            // add equipment
+            println!("[INFO] Add server to network");
+            eq.get_network().add_equipment(network::Equipment::new(name.clone(), pub_key.clone()));
+
+            // NEW_CERTIFICATE
+            let certificate = eq.certify(name.clone(), pub_key.clone());
+            let issuer_name = eq.get_name().clone();
+            let issuer_pub_key = eq.get_public_key().clone();
+            eq.get_network().add_certification(
+                name.clone(),
+                pub_key.clone(),
+                issuer_name,
+                issuer_pub_key,
+                certificate.0.to_pem().unwrap(),
+            );
+
+            println!("[INFO] Send back new certificate");
+            send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
+        } else {
+            send(stream.try_clone().unwrap(), Packet::refused())?;
+        }
+    }
+
+    println!("[INFO] Connected");
     Ok(())
 }
 

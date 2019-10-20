@@ -20,12 +20,18 @@ impl Network {
         n.add_equipment(root_eq);
         n
     }
-    pub fn add_equipment(&mut self, eq : Equipment) {
+    pub fn add_equipment(&mut self, eq: Equipment) {
         let pub_key = eq.pub_key.clone();
         let i = self.graph.add_node(eq).index();
         self.nodes.insert(pub_key, i);
     }
-    pub fn add_certification(&mut self, subject_pub_key: Vec<u8>, issuer_pub_key: Vec<u8>, cert: Vec<u8>) {
+    pub fn add_certification(&mut self, subject_name: String, subject_pub_key: Vec<u8>, issuer_name: String, issuer_pub_key: Vec<u8>, cert: Vec<u8>) {
+        if !self.nodes.contains_key(&subject_pub_key) {
+            self.add_equipment(Equipment::new(subject_name.clone(), subject_pub_key.clone()));
+        }
+        if !self.nodes.contains_key(&issuer_pub_key) {
+            self.add_equipment(Equipment::new(issuer_name.clone(), issuer_pub_key.clone()));
+        }
         let subject = self.nodes.get(&subject_pub_key).unwrap();
         let issuer = self.nodes.get(&issuer_pub_key).unwrap();
         self.graph.add_edge(NodeIndex::new(issuer.clone()), NodeIndex::new(subject.clone()), cert);
