@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use petgraph::{Graph, Directed};
 use std::collections::HashMap;
 use petgraph::graph::NodeIndex;
@@ -41,7 +40,7 @@ impl Network {
     }
 }
 
-
+#[allow(dead_code)]
 pub struct Equipment {
     name: String,
     pub_key: Vec<u8>,

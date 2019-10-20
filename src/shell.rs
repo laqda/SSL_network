@@ -4,12 +4,9 @@ use crate::payloads::{Packet, PacketType};
 use crate::errors::SSLNetworkError;
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::{thread, io};
+use std::io;
 use std::sync::{Arc, Mutex};
-use failure::_core::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
-use std::io::{Write, BufReader, BufRead, BufWriter, stdin, stdout, Read};
+use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -97,7 +94,7 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
                 send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?;
             } else {
                 println!("[INFO] Client is not already certified");
-                let allow_client = allow_certify_new_equipment();
+                let allow_client = allow_certify_new_equipment()?;
                 if allow_client {
                     // add equipment
                     println!("[INFO] Add client to network");
@@ -198,7 +195,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         send(stream.try_clone().unwrap(), Packet::connected())?;
     } else {
         println!("[INFO] Server is not already certified");
-        let allow_server = allow_certify_new_equipment();
+        let allow_server = allow_certify_new_equipment()?;
         if allow_server {
             // add equipment
             println!("[INFO] Add server to network");
@@ -236,7 +233,12 @@ fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
         }
         _ => {}
     };
-    writer.flush();
+    match writer.flush() {
+        Err(_) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -251,18 +253,28 @@ fn receive(stream: &TcpStream) -> Result<Packet, SSLNetworkError> {
     };
     let packet: Packet = match serde_json::from_str(packet.as_str()) {
         Ok(p) => p,
-        Err(e) => {
+        Err(_) => {
             return Err(SSLNetworkError::NoConnection {});
         }
     };
     Ok(packet)
 }
 
-fn allow_certify_new_equipment() -> bool {
+fn allow_certify_new_equipment() -> Result<bool, SSLNetworkError> {
     print!("Add new equipment to network (y/N) ? ");
-    stdout().flush();
+    match stdout().flush() {
+        Err(_) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+        _ => {}
+    }
     let mut response = String::new();
-    io::stdin().read_line(&mut response);
+    match io::stdin().read_line(&mut response) {
+        Err(_) => {
+            return Err(SSLNetworkError::NoConnection {});
+        }
+        _ => {}
+    }
     let response = response.trim();
-    response == "y"
+    Ok(response == "y")
 }
