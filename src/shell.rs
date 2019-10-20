@@ -1,5 +1,6 @@
 use crate::equipment::Equipment;
 use crate::payloads;
+use crate::payloads::Packet;
 use crate::errors::SSLNetworkError;
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, IpAddr, TcpStream};
@@ -9,6 +10,8 @@ use failure::_core::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::io::{Write, Read};
+use serde::de::Error;
+use serde_json::error::ErrorCode;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -105,28 +108,30 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
 
 fn server_handle_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
     let eq = ref_eq.lock().unwrap();
+    println!("[INFO] Packet receive from {}", stream.peer_addr().unwrap());
+    let packet: Packet = serde_json::from_str(receive(stream).as_str()).unwrap();
+}
 
+fn client_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
+    let eq = ref_eq.lock().unwrap();
+    send(stream, Packet::connect(eq.get_name(), eq.get_public_key_pem()));
+}
+
+fn send(stream: &mut TcpStream, packet: Packet) {
+    while let Err(err) = stream.write_all(serde_json::to_string(&packet).unwrap().as_bytes()) {
+        if err.kind() != io::ErrorKind::WouldBlock {
+            panic!("error: {:?}", err);
+        }
+    };
+    stream.flush().unwrap();
+}
+
+fn receive(stream: &mut TcpStream) -> String {
     let mut res = vec![];
     while let Err(err) = stream.read_to_end(&mut res) {
         if err.kind() != io::ErrorKind::WouldBlock {
             panic!("stream error: {:?}", err);
         }
     }
-
-    println!("receive connection and access equipment {}", eq.get_socket_address());
-    println!("{}", String::from_utf8_lossy(&res));
-}
-
-fn client_connection(stream: &mut TcpStream, ref_eq: Arc<Mutex<Equipment>>) {
-    let eq = ref_eq.lock().unwrap();
-    send(stream, serde_json::to_string(&payloads::Connect { name: eq.to_string(), pub_key: eq.get_public_key_pem() }).unwrap());
-}
-
-fn send(stream: &mut TcpStream, payload: String) {
-    while let Err(err) = stream.write_all(payload.clone().as_bytes()) {
-        if err.kind() != io::ErrorKind::WouldBlock {
-            panic!("error: {:?}", err);
-        }
-    }
-    stream.flush().unwrap();
+    String::from_utf8(res).unwrap()
 }

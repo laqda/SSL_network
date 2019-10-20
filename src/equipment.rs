@@ -36,6 +36,9 @@ impl Equipment {
             false => Err(SSLNetworkError::EquipmentCreationFailInvalidSelfCertificate {}),
         }
     }
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
     pub fn get_public_key(&self) -> PKey<Public> {
         self.certificate.as_ref().unwrap().0.public_key().unwrap()
     }
