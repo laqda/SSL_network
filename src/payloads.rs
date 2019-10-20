@@ -2,8 +2,8 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Packet {
-    packet_type: String,
-    payload: String,
+    pub packet_type: String,
+    pub payload: String,
 }
 
 impl Packet {
@@ -62,23 +62,23 @@ impl Packet {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Connect {
     // sender wants to communicate with receiver
-    name: String,
-    pub_key: Vec<u8>,
+    pub name: String,
+    pub pub_key: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Allowed {
     // sender got a certification chain
-    name: String,
-    pub_key: Vec<u8>,
+    pub name: String,
+    pub pub_key: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewCertificate {
     // sender do not possess a certification chain, User OK to add receiver
-    name: String,
-    pub_key: Vec<u8>,
-    certificate: Vec<u8>,
+    pub name: String,
+    pub pub_key: Vec<u8>,
+    pub certificate: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
