@@ -110,12 +110,15 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
 
 fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let eq = ref_eq.lock().unwrap();
+
     let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
     match packet.packet_type {
         PacketType::CONNECT => {
             let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
             // test exist
             // ask permission to add
+
+            // NEW_CERTIFICATE
             let certificate = eq.certify(payload.name, payload.pub_key);
             send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()));
         }
@@ -123,13 +126,33 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
             return Err(SSLNetworkError::ConnectionProcessViolation {});
         }
     };
+
     Ok(())
 }
 
 fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let eq = ref_eq.lock().unwrap();
+
+    // CONNECT
     send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()));
-    let packet = receive(&stream);
+
+    // CONNECT response
+    let packet: Packet = serde_json::from_str(receive(&stream).as_str()).unwrap();
+    match packet.packet_type {
+        PacketType::ALLOWED => {
+
+        },
+        PacketType::NEW_CERTIFICATE => {
+            let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
+        },
+        PacketType::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::ConnectionProcessViolation {});
+        }
+    };
+
     Ok(())
 }
 
