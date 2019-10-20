@@ -8,7 +8,9 @@ use openssl::rsa::Rsa;
 use openssl::nid::Nid;
 use std::fmt::{Display, Formatter, Error};
 use std::net::{IpAddr, SocketAddr, Ipv4Addr};
-use self::openssl::pkey::{Private};
+use self::openssl::pkey::Private;
+use crate::network::Network;
+use crate::network;
 
 pub struct Equipment {
     name: String,
@@ -16,19 +18,25 @@ pub struct Equipment {
     port: u16,
     certificate: Option<Certificate>,
     rsa: Rsa<Private>,
+    network: Network,
 }
 
 impl Equipment {
     pub fn new(address: Ipv4Addr, port: u16) -> Result<Equipment, SSLNetworkError> {
         let name = format!("Equipment_{}:{}", address, port);
+        let name_init_network = name.clone();
+
         let rsa = Rsa::generate(2048).unwrap();
         let rsa_verify = rsa.clone();
+        let rsa_init_network = rsa.clone();
+
         let mut eq = Equipment {
             name,
             address,
             port,
             certificate: None,
             rsa,
+            network: Network::new(network::Equipment::new(name_init_network, rsa_init_network.public_key_to_pem().unwrap())),
         };
         eq.self_certify();
         let public_key = PKey::from_rsa(rsa_verify).unwrap();
@@ -37,13 +45,10 @@ impl Equipment {
             false => Err(SSLNetworkError::EquipmentCreationFailInvalidSelfCertificate {}),
         }
     }
-    pub fn get_name(&self) -> String {
-        self.name.clone()
-    }
+    pub fn get_name(&self) -> String { self.name.clone() }
     pub fn get_public_key(&self) -> Vec<u8> { self.rsa.public_key_to_pem().unwrap() }
-    pub fn get_private_key(&self) -> Vec<u8> {
-        self.rsa.private_key_to_pem().unwrap()
-    }
+    pub fn get_private_key(&self) -> Vec<u8> { self.rsa.private_key_to_pem().unwrap() }
+    pub fn get_network(&mut self) -> &mut Network { &mut self.network }
     pub fn get_socket_address(&self) -> SocketAddr { SocketAddr::new(IpAddr::V4(self.address), self.port) }
     pub fn self_certify(&mut self) { self.certificate = Some(self.certify(self.name.clone(), self.get_public_key())); }
     pub fn certify(&self, subject_name: String, subject_pub_key: Vec<u8>) -> Certificate { Certificate::certify(subject_name, subject_pub_key, self.name.clone(), self.get_private_key()) }

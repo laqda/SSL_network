@@ -14,6 +14,7 @@ mod equipment;
 mod errors;
 mod shell;
 mod payloads;
+mod network;
 
 fn main() {
     let matches = App::new("ssl_network")
