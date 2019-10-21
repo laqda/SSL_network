@@ -134,12 +134,7 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
         }
         PacketType::NEW_CERTIFICATE => {
             let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
-            println!("[INFO] New certificate from {}", stream.peer_addr().unwrap());
-            let certificate = payload.certificate;
-            let subject_name = eq.get_name().clone();
-            let subject_pub_key = eq.get_public_key().clone();
-            eq.get_network().add_certification(subject_name, subject_pub_key, payload.name, payload.pub_key.clone(), certificate);
-            println!("[INFO] Allowed to connect");
+            receive_new_certificate(stream.peer_addr().unwrap().to_string(), payload, &mut eq);
         }
         PacketType::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -176,12 +171,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
             let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
             name = payload.name.clone();
             pub_key = payload.pub_key.clone();
-            println!("[INFO] New certificate from {}", stream.peer_addr().unwrap());
-            let certificate = payload.certificate;
-            let subject_name = eq.get_name().clone();
-            let subject_pub_key = eq.get_public_key().clone();
-            eq.get_network().add_certification(subject_name, subject_pub_key, payload.name.clone(), pub_key.clone(), certificate);
-            println!("[INFO] Allowed to connect");
+            receive_new_certificate(stream.peer_addr().unwrap().to_string(), payload, &mut eq);
         }
         PacketType::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -224,6 +214,15 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
 
     println!("[INFO] Connected");
     Ok(())
+}
+
+fn receive_new_certificate(addr: String, payload: payloads::NewCertificate, eq: &mut Equipment) {
+    println!("[INFO] New certificate from {}", addr);
+    let certificate = payload.certificate;
+    let subject_name = eq.get_name().clone();
+    let subject_pub_key = eq.get_public_key().clone();
+    eq.get_network().add_certification(subject_name, subject_pub_key, payload.name, payload.pub_key, certificate);
+    println!("[INFO] Allowed to connect");
 }
 
 fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
