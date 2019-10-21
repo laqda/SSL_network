@@ -81,44 +81,14 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
     Ok(())
 }
 
-fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+fn server_handle_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let mut eq = ref_eq.lock().unwrap();
 
     let packet: Packet = receive(&stream)?;
     match packet.packet_type {
         PacketType::CONNECT => {
             let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
-            // test exist
-            if eq.get_network().is_verified(payload.pub_key.clone()) {
-                println!("[INFO] Client is already certified");
-                send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?;
-            } else {
-                println!("[INFO] Client is not already certified");
-                let allow_client = allow_certify_new_equipment()?;
-                if allow_client {
-                    // add equipment
-                    println!("[INFO] Add client to network");
-                    eq.get_network().add_equipment(network::Equipment::new(payload.name.clone(), payload.pub_key.clone()));
-
-                    // NEW_CERTIFICATE
-                    let certificate = eq.certify(payload.name.clone(), payload.pub_key.clone());
-                    let issuer_name = eq.get_name().clone();
-                    let issuer_pub_key = eq.get_public_key().clone();
-                    eq.get_network().add_certification(
-                        payload.name.clone(),
-                        payload.pub_key.clone(),
-                        issuer_name,
-                        issuer_pub_key,
-                        certificate.0.to_pem().unwrap(),
-                    );
-
-                    println!("[INFO] Send back new certificate");
-                    send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
-                } else {
-                    send(stream.try_clone().unwrap(), Packet::refused())?;
-                    return Err(SSLNetworkError::ConnectionRefused {});
-                }
-            }
+            try_to_connect(&mut stream, &mut eq, payload.name, payload.pub_key, PacketType::ALLOWED)?;
         }
         _ => {
             return Err(SSLNetworkError::ConnectionProcessViolation {});
@@ -130,11 +100,11 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
 
     match packet.packet_type {
         PacketType::CONNECTED => {
-            println!("[INFO] Allowed to connect");
+            receive_connected();
         }
         PacketType::NEW_CERTIFICATE => {
             let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
-            receive_new_certificate(stream.peer_addr().unwrap().to_string(), payload, &mut eq);
+            receive_new_certificate(payload, &mut eq);
         }
         PacketType::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -148,7 +118,7 @@ fn server_handle_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) ->
     Ok(())
 }
 
-fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+fn client_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let mut eq = ref_eq.lock().unwrap();
 
     // CONNECT
@@ -157,6 +127,7 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     // CONNECT response
     let packet: Packet = receive(&stream)?;
 
+    // save name and pub_key to allow verify then later
     let name: String;
     let pub_key: Vec<u8>;
 
@@ -165,13 +136,14 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
             let payload: payloads::Allowed = serde_json::from_str(packet.payload.as_str()).unwrap();
             name = payload.name.clone();
             pub_key = payload.pub_key.clone();
-            println!("[INFO] Allowed to connect");
+            receive_allowed();
         }
         PacketType::NEW_CERTIFICATE => {
             let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
             name = payload.name.clone();
             pub_key = payload.pub_key.clone();
-            receive_new_certificate(stream.peer_addr().unwrap().to_string(), payload, &mut eq);
+            // stream.peer_addr().unwrap().to_string()
+            receive_new_certificate(payload, &mut eq);
         }
         PacketType::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -181,49 +153,67 @@ fn client_connection(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         }
     };
 
-    if eq.get_network().is_verified(pub_key.clone()) {
-        println!("[INFO] Server is already certified");
-        send(stream.try_clone().unwrap(), Packet::connected())?;
-    } else {
-        println!("[INFO] Server is not already certified");
-        let allow_server = allow_certify_new_equipment()?;
-        if allow_server {
-            // add equipment
-            println!("[INFO] Add server to network");
-            eq.get_network().add_equipment(network::Equipment::new(name.clone(), pub_key.clone()));
-
-            // NEW_CERTIFICATE
-            let certificate = eq.certify(name.clone(), pub_key.clone());
-            let issuer_name = eq.get_name().clone();
-            let issuer_pub_key = eq.get_public_key().clone();
-            eq.get_network().add_certification(
-                name.clone(),
-                pub_key.clone(),
-                issuer_name,
-                issuer_pub_key,
-                certificate.0.to_pem().unwrap(),
-            );
-
-            println!("[INFO] Send back new certificate");
-            send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
-        } else {
-            send(stream.try_clone().unwrap(), Packet::refused())?;
-            return Err(SSLNetworkError::ConnectionRefused {});
-        }
-    }
+    try_to_connect(&mut stream, &mut eq, name, pub_key, PacketType::CONNECTED)?;
 
     println!("[INFO] Connected");
     Ok(())
 }
 
-fn receive_new_certificate(addr: String, payload: payloads::NewCertificate, eq: &mut Equipment) {
-    println!("[INFO] New certificate from {}", addr);
+// actions
+
+fn receive_allowed() {
+    println!("[INFO] Allowed to connect");
+}
+
+fn receive_new_certificate(payload: payloads::NewCertificate, eq: &mut Equipment) {
+    println!("[INFO] New certificate");
     let certificate = payload.certificate;
     let subject_name = eq.get_name().clone();
     let subject_pub_key = eq.get_public_key().clone();
     eq.get_network().add_certification(subject_name, subject_pub_key, payload.name, payload.pub_key, certificate);
     println!("[INFO] Allowed to connect");
 }
+
+fn receive_connected() {
+    println!("[INFO] Allowed to connect");
+}
+
+fn try_to_connect(stream: &mut TcpStream, eq: &mut Equipment, name: String, pub_key: Vec<u8>, packet_type_to_return_if_already_certified: PacketType) -> Result<(), SSLNetworkError> {
+    if eq.get_network().is_verified(pub_key.clone()) {
+        println!("[INFO] Distant equipment is already certified");
+        match packet_type_to_return_if_already_certified {
+            PacketType::ALLOWED => { send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?; }
+            PacketType::CONNECTED => { send(stream.try_clone().unwrap(), Packet::connected())?; }
+            _ => { return Err(SSLNetworkError::ConnectionProcessViolation {}); }
+        }
+    } else {
+        println!("[INFO] Distant equipment is not already certified");
+        if allow_certify_new_equipment()? {
+            println!("[INFO] Add distant equipment to network");
+            eq.get_network().add_equipment(network::Equipment::new(name.clone(), pub_key.clone()));
+            // generate new certificate
+            let certificate = eq.certify(name.clone(), pub_key.clone());
+            let issuer_name = eq.get_name().clone();
+            let issuer_pub_key = eq.get_public_key().clone();
+            eq.get_network().add_certification(
+                name,
+                pub_key,
+                issuer_name,
+                issuer_pub_key,
+                certificate.0.to_pem().unwrap(),
+            );
+
+            println!("[INFO] Send back new certificate to distant equipment");
+            send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
+        } else {
+            send(stream.try_clone().unwrap(), Packet::refused())?;
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+    }
+    Ok(())
+}
+
+// tools
 
 fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
     let packet = serde_json::to_string(&packet).unwrap() + "\n";
