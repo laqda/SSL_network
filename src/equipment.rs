@@ -8,9 +8,10 @@ use openssl::rsa::Rsa;
 use openssl::nid::Nid;
 use std::fmt::{Display, Formatter, Error};
 use std::net::{IpAddr, SocketAddr, Ipv4Addr};
-use self::openssl::pkey::Private;
+use self::openssl::pkey::{Private, PKeyRef, Public};
 use crate::network::Network;
 use crate::network;
+use self::openssl::error::ErrorStack;
 
 pub struct Equipment {
     name: String,
@@ -57,7 +58,7 @@ impl Equipment {
 impl Display for Equipment {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         let certificate = match &self.certificate {
-            Some(c) => String::from_utf8(c.0.to_pem().unwrap()).unwrap(),
+            Some(c) => String::from_utf8(c.to_pem().unwrap()).unwrap(),
             None => String::from("None"),
         };
         write!(f,
@@ -95,11 +96,12 @@ impl Certificate {
 
         Certificate(builder.build())
     }
+    pub fn to_pem(&self) -> Result<Vec<u8>, ErrorStack> { self.0.to_pem() }
 }
 
 impl Display for Certificate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "[certificate]\n{}", String::from_utf8(self.0.to_pem().unwrap()).unwrap(),
+        write!(f, "[certificate]\n{}", String::from_utf8(self.to_pem().unwrap()).unwrap(),
         )
     }
 }

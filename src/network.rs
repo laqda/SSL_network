@@ -40,9 +40,9 @@ impl Network {
             // TODO verify if subject becoming verified implies others to become verified
         }
     }
-    pub fn is_verified(&self, pub_key: Vec<u8>) -> bool {
-        if self.nodes.contains_key(&pub_key) {
-            let node = self.nodes.get(&pub_key).unwrap();
+    pub fn is_verified(&self, pub_key: &Vec<u8>) -> bool {
+        if self.nodes.contains_key(pub_key) {
+            let node = self.nodes.get(pub_key).unwrap();
             let node = self.graph.node_weight(NodeIndex::new(node.clone())).unwrap();
             return node.verified;
         }

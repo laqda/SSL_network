@@ -1,12 +1,15 @@
 use crate::equipment::Equipment;
 use crate::{payloads, network};
-use crate::payloads::{Packet, PacketType};
+use crate::payloads::{ConnectionPacket, ConnectionPacketTypes, Nonce};
 use crate::errors::SSLNetworkError;
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
+use std::hash::Hash;
+use std::str::FromStr;
+use std::collections::hash_map::DefaultHasher;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -45,7 +48,7 @@ fn listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipm
     let stream = listener.accept();
     match stream {
         Ok(s) => {
-            match server_handle_connection(s.0, ref_eq.clone()) {
+            match connection_server(s.0, ref_eq.clone()) {
                 Err(e) => println!("{}", e),
                 _ => {}
             }
@@ -74,150 +77,300 @@ fn connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equip
     };
 
     drop(eq);
-    match client_connection(stream, ref_eq.clone()) {
+    match connection_client(stream, ref_eq.clone()) {
         Err(e) => println!("{}", e),
         _ => {}
     }
     Ok(())
 }
 
-fn server_handle_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+// Inter-connections
+
+#[derive(Hash)]
+struct ConnectionIdentifier {
+    client_nonce: Nonce,
+    server_nonce: Nonce,
+}
+
+// CONNECTION
+
+fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
     let mut eq = ref_eq.lock().unwrap();
+    let local_addr = stream.local_addr().unwrap().to_string();
+    let peer_addr = stream.peer_addr().unwrap().to_string();
 
-    let packet: Packet = receive(&stream)?;
-    match packet.packet_type {
-        PacketType::CONNECT => {
-            let payload: payloads::Connect = serde_json::from_str(packet.payload.as_str()).unwrap();
-            try_to_connect(&mut stream, &mut eq, payload.name, payload.pub_key, PacketType::ALLOWED)?;
-        }
-        _ => {
-            return Err(SSLNetworkError::ConnectionProcessViolation {});
-        }
-    };
+    let eq_name = &eq.get_name();
+    let eq_pub_key = &eq.get_public_key();
+    let eq_pri_key = &eq.get_private_key();
+    let eq_network = eq.get_network();
 
-    // IMPLICIT CONNECT FROM SERVER RESPONSE
-    let packet = receive(&stream)?;
+    let peer_name;
+    let peer_pub_key;
+    let peer_nonce: Nonce;
 
-    match packet.packet_type {
-        PacketType::CONNECTED => {
-            receive_connected();
+    let packet = connection_receive(&stream)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::DISCOVER_SYN { name, pub_key, nonce } => {
+            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
+            peer_name = name.clone();
+            peer_pub_key = pub_key.clone();
+            peer_nonce = nonce.clone();
         }
-        PacketType::NEW_CERTIFICATE => {
-            let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
-            receive_new_certificate(payload, &mut eq);
-        }
-        PacketType::REFUSED => {
+        ConnectionPacketTypes::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::ConnectionProcessViolation {});
-        }
-    };
-
-    println!("[INFO] Connected");
-    Ok(())
-}
-
-fn client_connection(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
-    let mut eq = ref_eq.lock().unwrap();
-
-    // CONNECT
-    send(stream.try_clone().unwrap(), Packet::connect(eq.get_name(), eq.get_public_key()))?;
-
-    // CONNECT response
-    let packet: Packet = receive(&stream)?;
-
-    // save name and pub_key to allow verify then later
-    let name: String;
-    let pub_key: Vec<u8>;
-
-    match packet.packet_type {
-        PacketType::ALLOWED => {
-            let payload: payloads::Allowed = serde_json::from_str(packet.payload.as_str()).unwrap();
-            name = payload.name.clone();
-            pub_key = payload.pub_key.clone();
-            receive_allowed();
-        }
-        PacketType::NEW_CERTIFICATE => {
-            let payload: payloads::NewCertificate = serde_json::from_str(packet.payload.as_str()).unwrap();
-            name = payload.name.clone();
-            pub_key = payload.pub_key.clone();
-            // stream.peer_addr().unwrap().to_string()
-            receive_new_certificate(payload, &mut eq);
-        }
-        PacketType::REFUSED => {
-            return Err(SSLNetworkError::ConnectionRefused {});
-        }
-        _ => {
-            return Err(SSLNetworkError::ConnectionProcessViolation {});
-        }
-    };
-
-    try_to_connect(&mut stream, &mut eq, name, pub_key, PacketType::CONNECTED)?;
-
-    println!("[INFO] Connected");
-    Ok(())
-}
-
-// actions
-
-fn receive_allowed() {
-    println!("[INFO] Allowed to connect");
-}
-
-fn receive_new_certificate(payload: payloads::NewCertificate, eq: &mut Equipment) {
-    println!("[INFO] New certificate");
-    let certificate = payload.certificate;
-    let subject_name = eq.get_name().clone();
-    let subject_pub_key = eq.get_public_key().clone();
-    eq.get_network().add_certification(subject_name, subject_pub_key, payload.name, payload.pub_key, certificate);
-    println!("[INFO] Allowed to connect");
-}
-
-fn receive_connected() {
-    println!("[INFO] Allowed to connect");
-}
-
-fn try_to_connect(stream: &mut TcpStream, eq: &mut Equipment, name: String, pub_key: Vec<u8>, packet_type_to_return_if_already_certified: PacketType) -> Result<(), SSLNetworkError> {
-    if eq.get_network().is_verified(pub_key.clone()) {
-        println!("[INFO] Distant equipment is already certified");
-        match packet_type_to_return_if_already_certified {
-            PacketType::ALLOWED => { send(stream.try_clone().unwrap(), Packet::allowed(eq.get_name().clone(), eq.get_public_key().clone()))?; }
-            PacketType::CONNECTED => { send(stream.try_clone().unwrap(), Packet::connected())?; }
-            _ => { return Err(SSLNetworkError::ConnectionProcessViolation {}); }
-        }
-    } else {
-        println!("[INFO] Distant equipment is not already certified");
-        if allow_certify_new_equipment()? {
-            println!("[INFO] Add distant equipment to network");
-            eq.get_network().add_equipment(network::Equipment::new(name.clone(), pub_key.clone()));
-            // generate new certificate
-            let certificate = eq.certify(name.clone(), pub_key.clone());
-            let issuer_name = eq.get_name().clone();
-            let issuer_pub_key = eq.get_public_key().clone();
-            eq.get_network().add_certification(
-                name,
-                pub_key,
-                issuer_name,
-                issuer_pub_key,
-                certificate.0.to_pem().unwrap(),
-            );
-
-            println!("[INFO] Send back new certificate to distant equipment");
-            send(stream.try_clone().unwrap(), Packet::new_certificate(eq.get_name(), eq.get_public_key(), certificate.0.to_pem().unwrap()))?;
-        } else {
-            send(stream.try_clone().unwrap(), Packet::refused())?;
-            return Err(SSLNetworkError::ConnectionRefused {});
+            return Err(SSLNetworkError::InvalidPayload {});
         }
     }
+
+    let local_nonce: Nonce = String::from("SERVER"); // TODO generate randomly
+
+    let packet = ConnectionPacket::generate_discover_syn_ack(eq_name.clone(), eq_pub_key.clone(), local_nonce.clone());
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    let packet = connection_receive(&stream)?;
+//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::DISCOVER_ACK => {}
+        ConnectionPacketTypes::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::InvalidPayload {});
+        }
+    }
+
+    let should_generate_new_certificate = match eq_network.is_verified(&peer_pub_key) { // test if peer belongs to local knowledge
+        true => {
+            println!("[INFO] Peer equipment is already certified");
+            false
+        }
+        false => {
+            let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
+            println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
+            if !allow_certify_new_equipment()? { // ask user to validate connection
+                let packet = ConnectionPacket::generate_refused();
+//                let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+                connection_send(&stream, packet)?;
+                return Err(SSLNetworkError::ConnectionRefused {});
+            }
+            true
+        }
+    };
+
+    let generated_new_certificate = match should_generate_new_certificate {
+        true => Some(eq.certify(peer_name.clone(), peer_pub_key.clone()).to_pem().unwrap()),
+        false => None,
+    };
+
+    let packet = ConnectionPacket::generate_allowed_syn(generated_new_certificate.clone());
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    let received_new_certificate;
+
+    let packet = connection_receive(&stream)?;
+//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate } => {
+            received_new_certificate = new_certificate;
+        }
+        ConnectionPacketTypes::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::InvalidPayload {});
+        }
+    }
+
+    println!("[INFO] Connection allowed by peer");
+
+    let eq_network = eq.get_network();
+
+    let packet = ConnectionPacket::generate_allowed_ack();
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    if let Some(certificate) = generated_new_certificate {
+        println!("[INFO] Save new certificate generated for peer");
+        eq_network.add_certification(
+            peer_name.clone(),
+            peer_pub_key.clone(),
+            eq_name.clone(),
+            eq_pub_key.clone(),
+            certificate.clone(),
+        );
+    }
+
+    if let Some(certificate) = received_new_certificate {
+        println!("[INFO] Save new certificate generated by peer");
+        eq_network.add_certification(
+            eq_name.clone(),
+            eq_pub_key.clone(),
+            peer_name.clone(),
+            peer_pub_key.clone(),
+            certificate.clone(),
+        );
+    }
+
+    println!("[INFO] Connection successful");
+
     Ok(())
+}
+
+fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+    let mut eq = ref_eq.lock().unwrap();
+    let local_addr = stream.local_addr().unwrap().to_string();
+    let peer_addr = stream.peer_addr().unwrap().to_string();
+
+    let eq_name = &eq.get_name();
+    let eq_pub_key = &eq.get_public_key();
+    let eq_pri_key = &eq.get_private_key();
+    let eq_network = eq.get_network();
+
+    let peer_name;
+    let peer_pub_key;
+    let peer_nonce: Nonce;
+
+    let local_nonce: Nonce = String::from("CLIENT"); // TODO generate randomly
+
+    let packet = ConnectionPacket::generate_discover_syn(eq_name.clone(), eq_pub_key.clone(), local_nonce.clone());
+    connection_send(&stream, packet)?;
+
+    let packet = connection_receive(&stream)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce } => {
+            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
+            peer_name = name.clone();
+            peer_pub_key = pub_key.clone();
+            peer_nonce = nonce.clone();
+        }
+        ConnectionPacketTypes::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::InvalidPayload {});
+        }
+    }
+
+    let packet = ConnectionPacket::generate_discover_ack();
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    let received_new_certificate;
+
+    let packet = connection_receive(&stream)?;
+//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::ALLOWED_SYN { new_certificate } => {
+            received_new_certificate = new_certificate;
+        }
+        ConnectionPacketTypes::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::InvalidPayload {});
+        }
+    }
+
+    let should_generate_new_certificate = match eq.get_network().is_verified(&peer_pub_key) { // test if peer belongs to local knowledge
+        true => {
+            println!("[INFO] Peer equipment is already certified");
+            false
+        }
+        false => {
+            let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
+            println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
+            if !allow_certify_new_equipment()? { // ask user to validate connection
+                let packet = ConnectionPacket::generate_refused();
+//                let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+                connection_send(&stream, packet)?;
+                return Err(SSLNetworkError::ConnectionRefused {});
+            }
+            true
+        }
+    };
+
+    let generated_new_certificate = match should_generate_new_certificate {
+        true => Some(eq.certify(peer_name.clone(), peer_pub_key.clone()).to_pem().unwrap()),
+        false => None,
+    };
+
+    let packet = ConnectionPacket::generate_allowed_syn_ack(generated_new_certificate.clone());
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    let packet = connection_receive(&stream)?;
+//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    let payload = packet.get_payload()?;
+    match payload {
+        ConnectionPacketTypes::ALLOWED_ACK => {}
+        ConnectionPacketTypes::REFUSED => {
+            return Err(SSLNetworkError::ConnectionRefused {});
+        }
+        _ => {
+            return Err(SSLNetworkError::InvalidPayload {});
+        }
+    }
+
+    println!("[INFO] Connection allowed by peer");
+
+    let eq_network = eq.get_network();
+
+    let packet = ConnectionPacket::generate_allowed_ack();
+//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    connection_send(&stream, packet)?;
+
+    if let Some(certificate) = generated_new_certificate {
+        println!("[INFO] Save new certificate generated for peer");
+        eq_network.add_certification(
+            peer_name.clone(),
+            peer_pub_key.clone(),
+            eq_name.clone(),
+            eq_pub_key.clone(),
+            certificate.clone(),
+        );
+    }
+
+    if let Some(certificate) = received_new_certificate {
+        println!("[INFO] Save new certificate generated by peer");
+        eq_network.add_certification(
+            eq_name.clone(),
+            eq_pub_key.clone(),
+            peer_name.clone(),
+            peer_pub_key.clone(),
+            certificate.clone(),
+        );
+    }
+
+    println!("[INFO] Connection successful");
+
+    Ok(())
+}
+
+fn connection_send(stream: &TcpStream, packet: ConnectionPacket) -> Result<(), SSLNetworkError> {
+    let packet = serde_json::to_string(&packet).unwrap();
+    send(stream, packet)
+}
+
+fn connection_receive(stream: &TcpStream) -> Result<ConnectionPacket, SSLNetworkError> {
+    let packet = receive(stream)?;
+    let packet = serde_json::from_str(packet.as_str()).map_err(|_| SSLNetworkError::InvalidPayload {}).unwrap();
+    Ok(packet)
 }
 
 // tools
 
-fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
-    let packet = serde_json::to_string(&packet).unwrap() + "\n";
-    let mut writer = BufWriter::new(&stream);
+fn send(stream: &TcpStream, packet: String) -> Result<(), SSLNetworkError> {
+    let packet = packet + "\n"; // end of line <-> end of sending data
+    let mut writer = BufWriter::new(stream);
     match writer.write_all(packet.as_bytes()) {
         Err(_) => {
             return Err(SSLNetworkError::NoConnection {});
@@ -233,7 +386,7 @@ fn send(stream: TcpStream, packet: Packet) -> Result<(), SSLNetworkError> {
     Ok(())
 }
 
-fn receive(stream: &TcpStream) -> Result<Packet, SSLNetworkError> {
+fn receive(stream: &TcpStream) -> Result<String, SSLNetworkError> {
     let mut reader = BufReader::new(stream);
     let mut packet = String::new();
     match reader.read_line(&mut packet) {
@@ -241,12 +394,6 @@ fn receive(stream: &TcpStream) -> Result<Packet, SSLNetworkError> {
             return Err(SSLNetworkError::NoConnection {});
         }
         _ => {}
-    };
-    let packet: Packet = match serde_json::from_str(packet.as_str()) {
-        Ok(p) => p,
-        Err(_) => {
-            return Err(SSLNetworkError::NoConnection {});
-        }
     };
     Ok(packet)
 }
