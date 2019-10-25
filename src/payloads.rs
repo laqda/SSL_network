@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use openssl::hash::MessageDigest;
 use openssl::sign::{Signer, Verifier};
-use crate::errors::SSLNetworkError;
+use crate::errors::{SSLNetworkError, ResultSSL};
 use openssl::pkey::PKey;
 
 pub type Nonce = String;
@@ -101,7 +101,7 @@ impl ConnectionPacket {
         self.signature = Some(signer.sign_to_vec().unwrap());
         self
     }
-    pub fn verify(&self, local_nonce: &String, peer_nonce: &String, peer_pub_key: &Vec<u8>) -> Result<(), SSLNetworkError> {
+    pub fn verify(&self, local_nonce: &String, peer_nonce: &String, peer_pub_key: &Vec<u8>) -> ResultSSL<()> {
         let pub_key = PKey::public_key_from_pem(peer_pub_key).unwrap();
         let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
         verifier.update(self.payload.as_ref()).unwrap();

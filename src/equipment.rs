@@ -1,6 +1,6 @@
 extern crate openssl;
 
-use crate::errors::SSLNetworkError;
+use crate::errors::{SSLNetworkError, ResultSSL};
 use openssl::x509::{X509, X509Name};
 use openssl::pkey::PKey;
 use openssl::hash::MessageDigest;
@@ -23,7 +23,7 @@ pub struct Equipment {
 }
 
 impl Equipment {
-    pub fn new(address: Ipv4Addr, port: u16) -> Result<Equipment, SSLNetworkError> {
+    pub fn new(address: Ipv4Addr, port: u16) -> ResultSSL<Equipment> {
         let name = format!("Equipment_{}:{}", address, port);
         let name_init_network = name.clone();
 

@@ -1,7 +1,7 @@
 use crate::equipment::Equipment;
 use crate::{payloads, network};
 use crate::payloads::{ConnectionPacket, ConnectionPacketTypes, Nonce};
-use crate::errors::SSLNetworkError;
+use crate::errors::{SSLNetworkError, ResultSSL};
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io;
@@ -94,7 +94,7 @@ struct ConnectionIdentifier {
 
 // CONNECTION
 
-fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
     let mut eq = ref_eq.lock().unwrap();
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
@@ -223,7 +223,7 @@ fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
     Ok(())
 }
 
-fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result<(), SSLNetworkError> {
+fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
     let mut eq = ref_eq.lock().unwrap();
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
@@ -355,12 +355,12 @@ fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
     Ok(())
 }
 
-fn connection_send(stream: &TcpStream, packet: ConnectionPacket) -> Result<(), SSLNetworkError> {
+fn connection_send(stream: &TcpStream, packet: ConnectionPacket) -> ResultSSL<()> {
     let packet = serde_json::to_string(&packet).unwrap();
     send(stream, packet)
 }
 
-fn connection_receive(stream: &TcpStream) -> Result<ConnectionPacket, SSLNetworkError> {
+fn connection_receive(stream: &TcpStream) -> ResultSSL<ConnectionPacket> {
     let packet = receive(stream)?;
     let packet = serde_json::from_str(packet.as_str()).map_err(|_| SSLNetworkError::InvalidPayload {}).unwrap();
     Ok(packet)
@@ -368,7 +368,7 @@ fn connection_receive(stream: &TcpStream) -> Result<ConnectionPacket, SSLNetwork
 
 // tools
 
-fn send(stream: &TcpStream, packet: String) -> Result<(), SSLNetworkError> {
+fn send(stream: &TcpStream, packet: String) -> ResultSSL<()> {
     let packet = packet + "\n"; // end of line <-> end of sending data
     let mut writer = BufWriter::new(stream);
     match writer.write_all(packet.as_bytes()) {
@@ -386,7 +386,7 @@ fn send(stream: &TcpStream, packet: String) -> Result<(), SSLNetworkError> {
     Ok(())
 }
 
-fn receive(stream: &TcpStream) -> Result<String, SSLNetworkError> {
+fn receive(stream: &TcpStream) -> ResultSSL<String> {
     let mut reader = BufReader::new(stream);
     let mut packet = String::new();
     match reader.read_line(&mut packet) {
@@ -398,7 +398,7 @@ fn receive(stream: &TcpStream) -> Result<String, SSLNetworkError> {
     Ok(packet)
 }
 
-fn allow_certify_new_equipment() -> Result<bool, SSLNetworkError> {
+fn allow_certify_new_equipment() -> ResultSSL<bool> {
     print!("Add new equipment to network (y/N) ? ");
     match stdout().flush() {
         Err(_) => {

@@ -1,5 +1,7 @@
 extern crate failure;
 
+pub type ResultSSL<T> = Result<T, SSLNetworkError>;
+
 #[derive(Debug, Fail)]
 pub enum SSLNetworkError {
     #[fail(display = "[ERROR] Invalid port : {}", port)]
