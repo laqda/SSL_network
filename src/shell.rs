@@ -126,11 +126,11 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     let local_nonce: Nonce = String::from("SERVER"); // TODO generate randomly
 
     let packet = ConnectionPacket::generate_discover_syn_ack(eq_name.clone(), eq_pub_key.clone(), local_nonce.clone());
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     let packet = connection_receive(&stream)?;
-//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
         ConnectionPacketTypes::DISCOVER_ACK => {}
@@ -152,7 +152,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
             println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = ConnectionPacket::generate_refused();
-//                let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+                let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
                 connection_send(&stream, packet)?;
                 return Err(SSLNetworkError::ConnectionRefused {});
             }
@@ -166,13 +166,13 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     };
 
     let packet = ConnectionPacket::generate_allowed_syn(generated_new_certificate.clone());
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     let received_new_certificate;
 
     let packet = connection_receive(&stream)?;
-//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
         ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate } => {
@@ -191,7 +191,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     let eq_network = eq.get_network();
 
     let packet = ConnectionPacket::generate_allowed_ack();
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     if let Some(certificate) = generated_new_certificate {
@@ -257,13 +257,13 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     }
 
     let packet = ConnectionPacket::generate_discover_ack();
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     let received_new_certificate;
 
     let packet = connection_receive(&stream)?;
-//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    packet.verify(&peer_nonce, &local_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
         ConnectionPacketTypes::ALLOWED_SYN { new_certificate } => {
@@ -287,7 +287,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
             println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = ConnectionPacket::generate_refused();
-//                let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+                let packet = packet.sign(&peer_nonce, &local_nonce, eq_pri_key);
                 connection_send(&stream, packet)?;
                 return Err(SSLNetworkError::ConnectionRefused {});
             }
@@ -301,11 +301,11 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     };
 
     let packet = ConnectionPacket::generate_allowed_syn_ack(generated_new_certificate.clone());
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     let packet = connection_receive(&stream)?;
-//    packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
+    packet.verify(&peer_nonce, &local_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
         ConnectionPacketTypes::ALLOWED_ACK => {}
@@ -322,7 +322,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     let eq_network = eq.get_network();
 
     let packet = ConnectionPacket::generate_allowed_ack();
-//    let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
     if let Some(certificate) = generated_new_certificate {

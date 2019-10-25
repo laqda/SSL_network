@@ -92,21 +92,21 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn sign(mut self, local_nonce: &String, peer_nonce: &String, eq_pri_key: &Vec<u8>) -> ConnectionPacket {
+    pub fn sign(mut self, server_nonce: &String, client_nonce: &String, eq_pri_key: &Vec<u8>) -> ConnectionPacket {
         let pri_key = PKey::private_key_from_pem(eq_pri_key).unwrap();
         let mut signer = Signer::new(MessageDigest::sha256(), &pri_key).unwrap();
-        signer.update(self.payload.as_ref()).unwrap();
-        signer.update(local_nonce.as_ref()).unwrap();
-        signer.update(peer_nonce.as_ref()).unwrap();
+        signer.update(self.payload.as_bytes()).unwrap();
+        signer.update(server_nonce.as_bytes()).unwrap();
+        signer.update(client_nonce.as_bytes()).unwrap();
         self.signature = Some(signer.sign_to_vec().unwrap());
         self
     }
-    pub fn verify(&self, local_nonce: &String, peer_nonce: &String, peer_pub_key: &Vec<u8>) -> ResultSSL<()> {
+    pub fn verify(&self, server_nonce: &String, client_nonce: &String, peer_pub_key: &Vec<u8>) -> ResultSSL<()> {
         let pub_key = PKey::public_key_from_pem(peer_pub_key).unwrap();
         let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
-        verifier.update(self.payload.as_ref()).unwrap();
-        verifier.update(local_nonce.as_ref()).unwrap();
-        verifier.update(peer_nonce.as_ref()).unwrap();
+        verifier.update(self.payload.as_bytes()).unwrap();
+        verifier.update(server_nonce.as_bytes()).unwrap();
+        verifier.update(client_nonce.as_bytes()).unwrap();
         match verifier.verify(self.signature.clone().ok_or(SSLNetworkError::ConnectionProtocolViolation {})?.as_ref()).unwrap() {
             true => Ok(()),
             false => Err(SSLNetworkError::InvalidSignature {})
