@@ -1,5 +1,4 @@
 use crate::equipment::Equipment;
-use crate::{payloads, network};
 use crate::payloads::{ConnectionPacket, ConnectionPacketTypes, Nonce};
 use crate::errors::{SSLNetworkError, ResultSSL};
 use shrust::{Shell, ShellIO, ExecResult};
@@ -8,7 +7,6 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::Hash;
-use std::str::FromStr;
 use std::collections::hash_map::DefaultHasher;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
@@ -94,7 +92,7 @@ struct ConnectionIdentifier {
 
 // CONNECTION
 
-fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
+fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
     let mut eq = ref_eq.lock().unwrap();
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
@@ -121,7 +119,7 @@ fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 
@@ -140,7 +138,7 @@ fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 
@@ -184,7 +182,7 @@ fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 
@@ -223,7 +221,7 @@ fn connection_server(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
     Ok(())
 }
 
-fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
+fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> ResultSSL<()> {
     let mut eq = ref_eq.lock().unwrap();
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
@@ -231,7 +229,6 @@ fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
     let eq_name = &eq.get_name();
     let eq_pub_key = &eq.get_public_key();
     let eq_pri_key = &eq.get_private_key();
-    let eq_network = eq.get_network();
 
     let peer_name;
     let peer_pub_key;
@@ -255,7 +252,7 @@ fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 
@@ -276,7 +273,7 @@ fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 
@@ -316,7 +313,7 @@ fn connection_client(mut stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Re
             return Err(SSLNetworkError::ConnectionRefused {});
         }
         _ => {
-            return Err(SSLNetworkError::InvalidPayload {});
+            return Err(SSLNetworkError::ConnectionProtocolViolation {});
         }
     }
 

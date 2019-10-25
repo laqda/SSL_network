@@ -8,7 +8,7 @@ use openssl::rsa::Rsa;
 use openssl::nid::Nid;
 use std::fmt::{Display, Formatter, Error};
 use std::net::{IpAddr, SocketAddr, Ipv4Addr};
-use self::openssl::pkey::{Private, PKeyRef, Public};
+use self::openssl::pkey::{Private};
 use crate::network::Network;
 use crate::network;
 use self::openssl::error::ErrorStack;
