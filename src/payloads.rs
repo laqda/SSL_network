@@ -3,8 +3,15 @@ use openssl::hash::MessageDigest;
 use openssl::sign::{Signer, Verifier};
 use crate::errors::{SSLNetworkError, ResultSSL};
 use openssl::pkey::PKey;
+use getrandom;
 
 pub type Nonce = String;
+
+pub fn gen_nonce() -> Nonce {
+    let mut buf = [0u8; 32];
+    getrandom::getrandom(&mut buf).unwrap();
+    String::from_utf8(buf.to_owned().to_vec()).unwrap()
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConnectionPacket {

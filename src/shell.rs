@@ -1,5 +1,5 @@
 use crate::equipment::Equipment;
-use crate::payloads::{ConnectionPacket, ConnectionPacketTypes, Nonce};
+use crate::payloads::{ConnectionPacket, ConnectionPacketTypes, Nonce, gen_nonce};
 use crate::errors::{SSLNetworkError, ResultSSL};
 use shrust::{Shell, ShellIO, ExecResult};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -123,7 +123,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         }
     }
 
-    let local_nonce: Nonce = String::from("SERVER"); // TODO generate randomly
+    let local_nonce: Nonce = gen_nonce();
 
     let packet = ConnectionPacket::generate_discover_syn_ack(eq_name.clone(), eq_pub_key.clone(), local_nonce.clone());
     let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
@@ -234,7 +234,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     let peer_pub_key;
     let peer_nonce: Nonce;
 
-    let local_nonce: Nonce = String::from("CLIENT"); // TODO generate randomly
+    let local_nonce: Nonce = gen_nonce();
 
     let packet = ConnectionPacket::generate_discover_syn(eq_name.clone(), eq_pub_key.clone(), local_nonce.clone());
     connection_send(&stream, packet)?;
