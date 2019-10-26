@@ -96,8 +96,8 @@ impl Certificate {
         builder.set_subject_name(&subject_name.as_ref()).unwrap();
         builder.set_issuer_name(&issuer_name.as_ref()).unwrap();
         builder.set_pubkey(&subject_pkey).unwrap();
-        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap());
-        builder.set_not_after(&Asn1Time::days_from_now(7).unwrap());
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()).unwrap();
         builder.sign(&issuer_pkey, MessageDigest::sha256()).unwrap();
 
         Certificate(builder.build())

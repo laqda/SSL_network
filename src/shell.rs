@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::Hash;
 use std::collections::hash_map::DefaultHasher;
-use openssl::pkey::PKey;
 use openssl::x509::X509;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
