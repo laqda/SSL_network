@@ -68,37 +68,39 @@ impl Network {
             .collect();
         let mut paths = vec![];
         for i in nodes_to_visit {
-            let mut predecessor = vec![NodeIndex::end(); graph.node_count()];
-            let start = node_index(self.root_node);
-            let goal = node_index(i);
-            depth_first_search(graph, Some(start), |event| {
-                if let DfsEvent::TreeEdge(u, v) = event {
-                    predecessor[v.index()] = u;
-                    if v == goal {
-                        return Control::Break(v);
-                    }
-                }
-                Control::Continue
-            });
-            let mut next = goal;
-            let mut path = vec![];
-            while next != start {
-                let pred = predecessor[next.index()];
-                let node = graph.node_weight(pred).unwrap();
-                let edge_index = graph.find_edge(pred, next).unwrap();
-                let edge = graph.edge_weight(edge_index).unwrap().clone();
-                path.push(((node.name.clone(), node.pub_key.clone()), edge));
-                next = pred;
-            }
-            path.reverse();
-            let eq = graph.node_weight(node_index(i)).unwrap();
-            paths.push(ChainCertification {
-                name: eq.name.clone(),
-                public_key: eq.pub_key.clone(),
-                chain: path,
-            });
+            paths.push(self.get_certification_chain(i).unwrap());
         }
         paths
+    }
+    pub fn get_certification_chain(&self, i: usize) -> Option<ChainCertification> {
+        let start = node_index(self.root_node);
+        let goal = node_index(i);
+        depth_first_search(graph, Some(start), |event| {
+            if let DfsEvent::TreeEdge(u, v) = event {
+                predecessor[v.index()] = u;
+                if v == goal {
+                    return Control::Break(v);
+                }
+            }
+            Control::Continue
+        });
+        let mut next = goal;
+        let mut path = vec![];
+        while next != start {
+            let pred = predecessor[next.index()];
+            let node = graph.node_weight(pred).unwrap();
+            let edge_index = graph.find_edge(pred, next).unwrap();
+            let edge = graph.edge_weight(edge_index).unwrap().clone();
+            path.push(((node.name.clone(), node.pub_key.clone()), edge));
+            next = pred;
+        }
+        path.reverse();
+        let eq = graph.node_weight(node_index(i)).unwrap();
+        Some(ChainCertification {
+            name: eq.name.clone(),
+            public_key: eq.pub_key.clone(),
+            chain: path,
+        })
     }
 }
 
