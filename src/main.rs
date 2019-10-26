@@ -15,6 +15,7 @@ mod errors;
 mod shell;
 mod payloads;
 mod network;
+mod shared_types;
 
 fn main() {
     let matches = App::new("ssl_network")

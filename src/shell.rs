@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::Hash;
 use std::collections::hash_map::DefaultHasher;
+use openssl::pkey::PKey;
+use openssl::x509::X509;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -16,6 +18,7 @@ impl EquipmentShell {
         let mut shell = Shell::new(Arc::new(Mutex::new(eq)));
         shell.new_command("infos", "Display equipment infos", 0, infos);
         shell.new_command("clear", "Clear shell", 0, clear);
+        shell.new_command("certified", "Display certified equipments", 0, certified);
         shell.new_command("listen", "Start a connection as server", 0, listen);
         shell.new_command("connect", "Start a connection as client (ex: connect 127.0.0.1:3202)", 1, connect);
         EquipmentShell(shell)
@@ -30,6 +33,25 @@ fn infos(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipme
 
 fn clear(_io: &mut ShellIO, _ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipment>>, _args: &[&str]) -> ExecResult {
     print!("\x1B[2J");
+    Ok(())
+}
+
+fn certified(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Equipment>>, _args: &[&str]) -> ExecResult {
+    let mut eq = ref_eq.lock().unwrap();
+    let certified_equipments = eq.get_network().get_certified_equipments();
+    println!();
+    for (index, chain) in certified_equipments.iter().enumerate() {
+        let pub_key = String::from_utf8(chain.public_key.clone()).unwrap();
+        println!("[{}] {}\n\n{}\n", index, chain.name.clone(), pub_key);
+        for ((name, public_key), certificate) in chain.chain.clone() {
+            println!("[*] {}", name);
+            let x509 = X509::from_pem(&certificate).unwrap();
+            let _: Vec<_> = x509.issuer_name().entries().map(|issuer| println!("(issuer) {}", issuer.data().as_utf8().unwrap())).collect();
+            let _: Vec<_> = x509.subject_name().entries().map(|subject| println!("(subject) {}", subject.data().as_utf8().unwrap())).collect();
+            println!("\n{}", String::from_utf8(public_key.clone()).unwrap());
+            println!("\n{}", String::from_utf8(certificate.clone()).unwrap());
+        }
+    }
     Ok(())
 }
 

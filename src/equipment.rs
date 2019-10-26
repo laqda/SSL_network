@@ -8,11 +8,14 @@ use openssl::rsa::Rsa;
 use openssl::nid::Nid;
 use std::fmt::{Display, Formatter, Error};
 use std::net::{IpAddr, SocketAddr, Ipv4Addr};
-use self::openssl::pkey::{Private};
+use self::openssl::pkey::Private;
 use crate::network::Network;
 use crate::network;
 use self::openssl::error::ErrorStack;
+use crate::shared_types;
+use self::openssl::asn1::Asn1Time;
 
+#[derive(Clone)]
 pub struct Equipment {
     name: String,
     address: Ipv4Addr,
@@ -47,12 +50,12 @@ impl Equipment {
         }
     }
     pub fn get_name(&self) -> String { self.name.clone() }
-    pub fn get_public_key(&self) -> Vec<u8> { self.rsa.public_key_to_pem().unwrap() }
-    pub fn get_private_key(&self) -> Vec<u8> { self.rsa.private_key_to_pem().unwrap() }
+    pub fn get_public_key(&self) -> shared_types::PublicKey { self.rsa.public_key_to_pem().unwrap() }
+    pub fn get_private_key(&self) -> shared_types::PrivateKey { self.rsa.private_key_to_pem().unwrap() }
     pub fn get_network(&mut self) -> &mut Network { &mut self.network }
     pub fn get_socket_address(&self) -> SocketAddr { SocketAddr::new(IpAddr::V4(self.address), self.port) }
     pub fn self_certify(&mut self) { self.certificate = Some(self.certify(self.name.clone(), self.get_public_key())); }
-    pub fn certify(&self, subject_name: String, subject_pub_key: Vec<u8>) -> Certificate { Certificate::certify(subject_name, subject_pub_key, self.name.clone(), self.get_private_key()) }
+    pub fn certify(&self, subject_name: String, subject_pub_key: shared_types::PublicKey) -> Certificate { Certificate::certify(subject_name, subject_pub_key, self.name.clone(), self.get_private_key()) }
 }
 
 impl Display for Equipment {
@@ -72,6 +75,7 @@ impl Display for Equipment {
     }
 }
 
+#[derive(Clone)]
 pub struct Certificate(pub X509);
 
 impl Certificate {
@@ -92,6 +96,8 @@ impl Certificate {
         builder.set_subject_name(&subject_name.as_ref()).unwrap();
         builder.set_issuer_name(&issuer_name.as_ref()).unwrap();
         builder.set_pubkey(&subject_pkey).unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap());
+        builder.set_not_after(&Asn1Time::days_from_now(7).unwrap());
         builder.sign(&issuer_pkey, MessageDigest::sha256()).unwrap();
 
         Certificate(builder.build())
