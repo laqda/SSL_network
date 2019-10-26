@@ -9,13 +9,14 @@ use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
 use shrust::ShellIO;
 use std::net::{Ipv4Addr};
+use crate::equipment::SimulatedEquipment;
 
-mod equipment;
 mod errors;
 mod shell;
 mod payloads;
 mod network;
-mod shared_types;
+mod certification;
+mod equipment;
 
 fn main() {
     let matches = App::new("ssl_network")
@@ -63,7 +64,7 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
         }
     };
 
-    let eq = equipment::Equipment::new(address, port)?;
+    let eq = SimulatedEquipment::new(address, port)?;
     let mut shell = EquipmentShell::new(eq);
     shell.0.run_loop(&mut ShellIO::default());
     Ok(())

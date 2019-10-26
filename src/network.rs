@@ -1,153 +1,138 @@
-use serde::{Serialize, Deserialize};
 use petgraph::{Graph, Directed};
-use std::collections::HashMap;
-use petgraph::graph::{NodeIndex, node_index};
+use petgraph::graph::{node_index, NodeIndex};
 use petgraph::visit::{depth_first_search, DfsEvent, Control};
-use crate::shared_types::{PublicKey, Certificate};
-use openssl::x509::X509;
+use crate::certification::{Certificate, Equipment, CertificationChain};
+use crate::errors::{ResultSSL, SSLNetworkError};
 
-type NetEdge = Certificate;
-type NetGraph = Graph<Equipment, NetEdge, Directed, u32>;
+type NetworkNode = Equipment;
+type NetworkEdge = Certificate;
+type NetworkGraph = Graph<NetworkNode, NetworkEdge, Directed>;
 
-#[derive(Clone)]
-pub struct Network {
-    root_node: usize,
-    root_node_pub_key: PublicKey,
-    graph: NetGraph,
-    nodes: HashMap<NetEdge, usize>,
+pub trait Network {
+    fn new(root: &Equipment) -> Self;
+    fn add_equipment(&mut self, equipment: &Equipment) -> usize;
+    fn add_certificate(&mut self, certificate: &Certificate) -> ResultSSL<()>;
+    fn contains(&self, equipment: &Equipment) -> bool;
+    fn is_equipment_certified(&self, equipment: &Equipment) -> ResultSSL<bool>;
+    fn get_chain_certifications(&self, equipment: &Equipment) -> ResultSSL<CertificationChain>;
+    fn get_chains_certifications(&self) -> ResultSSL<Vec<CertificationChain>>;
+    fn add_chains_certifications(&mut self, chains: Vec<CertificationChain>) -> ResultSSL<()>;
 }
 
-impl Network {
-    pub fn new(root_eq: Equipment) -> Network {
-        let mut n = Network {
-            graph: Graph::new(),
-            nodes: HashMap::new(),
-            root_node: 0,
-            root_node_pub_key: root_eq.pub_key.clone(),
+pub struct EquipmentNetwork {
+    root_index: usize,
+    graph: NetworkGraph,
+}
+
+impl Network for EquipmentNetwork {
+    fn new(root_eq: &Equipment) -> EquipmentNetwork {
+        let mut graph = NetworkGraph::new();
+        let root_index = graph.add_node(root_eq.clone()).index();
+        EquipmentNetwork {
+            root_index,
+            graph,
+        }
+    }
+    fn add_equipment(&mut self, equipment: &Equipment) -> usize {
+        self.graph.add_node(equipment.clone()).index()
+    }
+    fn add_certificate(&mut self, certificate: &Certificate) -> ResultSSL<()> {
+        if !self.contains(certificate.subject()) {
+            self.add_equipment(certificate.subject());
+        }
+        if !self.contains(certificate.issuer()) {
+            self.add_equipment(certificate.issuer());
+        }
+        let subject_index = self.get_node_index(certificate.subject()).ok_or(SSLNetworkError::EquipmentNotFound {})?;
+        let issuer_index = self.get_node_index(certificate.issuer()).ok_or(SSLNetworkError::EquipmentNotFound {})?;
+        self.graph.add_edge(node_index(issuer_index), node_index(subject_index), certificate.clone());
+        Ok(())
+    }
+    fn contains(&self, equipment: &Equipment) -> bool {
+        match self.get_node_index(equipment) {
+            Some(_) => true,
+            None => false,
+        }
+    }
+    fn is_equipment_certified(&self, equipment: &Equipment) -> ResultSSL<bool> {
+        let chain = match self.get_chain_certifications(equipment) {
+            Ok(chain) => chain,
+            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false),
+            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false),
+            Err(e) => return Err(e),
         };
-        let i = n.add_equipment(root_eq);
-        n.root_node = i;
-        n
+        chain.is_valid()
     }
-    pub fn add_equipment(&mut self, eq: Equipment) -> usize {
-        let pub_key = eq.pub_key.clone();
-        let i = self.graph.add_node(eq).index();
-        self.nodes.insert(pub_key, i);
-        i
-    }
-    pub fn add_certification(&mut self, subject_name: String, subject_pub_key: PublicKey, issuer_name: String, issuer_pub_key: PublicKey, cert: Certificate) {
-        if !self.nodes.contains_key(&subject_pub_key) {
-            self.add_equipment(Equipment::new(subject_name.clone(), subject_pub_key.clone()));
-        }
-        if !self.nodes.contains_key(&issuer_pub_key) {
-            self.add_equipment(Equipment::new(issuer_name.clone(), issuer_pub_key.clone()));
-        }
-        let subject = self.nodes.get(&subject_pub_key).unwrap();
-        let issuer = self.nodes.get(&issuer_pub_key).unwrap();
-        self.graph.add_edge(NodeIndex::new(issuer.clone()), NodeIndex::new(subject.clone()), cert);
-        if self.graph.node_weight(NodeIndex::new(issuer.clone())).unwrap().verified {
-            let subject = self.graph.node_weight_mut(NodeIndex::new(subject.clone())).unwrap();
-            subject.verified = true;
-            // TODO verify if subject becoming verified implies others to become verified
-        }
-    }
-    pub fn is_verified(&self, pub_key: &PublicKey) -> bool {
-        if self.nodes.contains_key(pub_key) {
-            let node = self.nodes.get(pub_key).unwrap();
-            let node = self.graph.node_weight(NodeIndex::new(node.clone())).unwrap();
-            return node.verified;
-        }
-        false
-    }
-    pub fn get_certified_equipments(&self) -> Vec<ChainCertification> {
-        let graph = &self.graph;
-        let root_node_pub_key = self.root_node_pub_key.clone();
-        let nodes_to_visit: Vec<usize> = graph.node_indices()
-            .map(|i| (i, graph.node_weight(i).unwrap()))
-            .filter(|node| node.1.verified)
-            .filter(|node| node.1.pub_key != root_node_pub_key)
-            .map(|node| node.0.index())
-            .collect();
-        let mut paths = vec![];
-        for i in nodes_to_visit {
-            paths.push(self.get_certification_chain(i).unwrap());
-        }
-        paths
-    }
-    pub fn get_certification_chain(&self, i: usize) -> Option<ChainCertification> {
-        let graph = &self.graph;
-        let start = node_index(self.root_node);
-        let goal = node_index(i);
-        let mut predecessor = vec![NodeIndex::end(); graph.node_count()];
-        depth_first_search(graph, Some(start), |event| {
+    fn get_chain_certifications(&self, equipment: &Equipment) -> ResultSSL<CertificationChain> {
+        let root_index = node_index(self.root_index);
+        let goal_index = match self.get_node_index(equipment) {
+            Some(i) => i,
+            None => return Err(SSLNetworkError::EquipmentNotFound {}),
+        };
+        let goal_index = node_index(goal_index);
+        let mut predecessor = vec![NodeIndex::end(); self.graph.node_count()];
+        depth_first_search(&self.graph, Some(root_index), |event| {
             if let DfsEvent::TreeEdge(u, v) = event {
                 predecessor[v.index()] = u;
-                if v == goal {
+                if v == goal_index {
                     return Control::Break(v);
                 }
             }
             Control::Continue
         });
-        let mut next = goal;
-        let mut path = vec![];
-        while next != start {
-            let pred = predecessor[next.index()];
-            let node = graph.node_weight(pred).unwrap();
-            let edge_index = graph.find_edge(pred, next).unwrap();
-            let edge = graph.edge_weight(edge_index).unwrap().clone();
-            path.push(((node.name.clone(), node.pub_key.clone()), edge));
-            next = pred;
+        let mut node = goal_index;
+        let mut chain = vec![];
+        while node != root_index {
+            let pred = predecessor[node.index()];
+            let certificate_index = match self.graph.find_edge(pred, node) {
+                Some(index) => index,
+                None => return Err(SSLNetworkError::CertificateNotFound {})
+            };
+            let certificate = match self.graph.edge_weight(certificate_index) {
+                Some(certificate) => certificate,
+                None => return Err(SSLNetworkError::CertificateNotFound {})
+            };
+            chain.push(certificate.clone());
+            node = pred;
         }
-        path.reverse();
-        let eq = graph.node_weight(node_index(i)).unwrap();
-        Some(ChainCertification {
-            name: eq.name.clone(),
-            public_key: eq.pub_key.clone(),
-            chain: path,
-        })
+        chain.reverse();
+        Ok((CertificationChain)(chain))
     }
-    pub fn add_chains(&mut self, chains: Vec<ChainCertification>) {
+
+    fn get_chains_certifications(&self) -> ResultSSL<Vec<CertificationChain>> {
+        let mut chains = vec![];
+        for node in self.graph.raw_nodes() {
+            let chain = match self.get_chain_certifications(&node.weight) {
+                Ok(chain) => chain,
+                Err(SSLNetworkError::CertificateNotFound {}) => continue, // no certification chain to that specific equipment
+                Err(e) => return Err(e),
+            };
+            chains.push(chain);
+        }
+        Ok(chains)
+    }
+
+    fn add_chains_certifications(&mut self, chains: Vec<CertificationChain>) -> ResultSSL<()> {
         for chain in chains {
-            for ((issuer_name, issuer_pub_key), certificate) in chain.chain {
-                let x509 = X509::from_pem(&certificate).unwrap();
-                let subject_name = x509.subject_name().entries().last().unwrap().data().as_utf8().unwrap().to_string();
-                let subject_pub_key = x509.public_key().unwrap().public_key_to_pem().unwrap();
-                println!("add");
-                self.add_certification(subject_name, subject_pub_key, issuer_name, issuer_pub_key, certificate);
+            for certificate in chain.get_certificates() {
+                self.add_certificate(certificate)?;
             }
         }
+        Ok(())
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct Equipment {
-    name: String,
-    pub_key: PublicKey,
-    pub verified: bool,
-}
-
-impl Equipment {
-    pub fn new(name: String, pub_key: PublicKey) -> Equipment {
-        Equipment {
-            name,
-            pub_key,
-            verified: false,
+impl EquipmentNetwork {
+    fn get_node_index(&self, equipment: &Equipment) -> Option<usize> {
+        for node_index in self.graph.node_indices() {
+            let current_equipment = match self.graph.node_weight(node_index) {
+                Some(current_equipment) => current_equipment,
+                None => continue,
+            };
+            if equipment == current_equipment {
+                return Some(node_index.index());
+            }
         }
+        None
     }
-    pub fn root(name: String, pub_key: PublicKey) -> Equipment {
-        Equipment {
-            name,
-            pub_key,
-            verified: true,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[derive(Clone)]
-pub struct ChainCertification {
-    pub name: String,
-    pub public_key: PublicKey,
-    pub chain: Vec<((String, PublicKey), NetEdge)>,
 }

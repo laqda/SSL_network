@@ -2,10 +2,9 @@ use serde::{Serialize, Deserialize};
 use openssl::hash::MessageDigest;
 use openssl::sign::{Signer, Verifier};
 use crate::errors::{SSLNetworkError, ResultSSL};
-use openssl::pkey::PKey;
+use openssl::pkey::{PKey, Private};
 use getrandom;
-use crate::shared_types::{PublicKey, Certificate, PrivateKey};
-use crate::network::ChainCertification;
+use crate::certification::{CertificationChain, PublicKey, Certificate};
 
 pub type Nonce = [u8; 32];
 
@@ -38,32 +37,32 @@ pub enum ConnectionPacketTypes {
     DISCOVER_ACK,
     ALLOWED_SYN {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<ChainCertification>,
+        knowledge: Vec<CertificationChain>,
     },
     ALLOWED_SYN_ACK {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<ChainCertification>,
+        knowledge: Vec<CertificationChain>,
     },
     ALLOWED_ACK,
     REFUSED,
 }
 
 impl ConnectionPacket {
-    pub fn generate_discover_syn(name: String, pub_key: PublicKey, nonce: Nonce) -> ConnectionPacket {
+    pub fn generate_discover_syn(name: &str, pub_key: &PublicKey, nonce: Nonce) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::DISCOVER_SYN {
-                name,
-                pub_key,
+                name: name.clone().to_string(),
+                pub_key: pub_key.clone(),
                 nonce,
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_discover_syn_ack(name: String, pub_key: PublicKey, nonce: Nonce) -> ConnectionPacket {
+    pub fn generate_discover_syn_ack(name: &str, pub_key: &PublicKey, nonce: Nonce) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::DISCOVER_SYN_ACK {
-                name,
-                pub_key,
+                name: name.clone().to_string(),
+                pub_key: pub_key.clone(),
                 nonce,
             }).unwrap(),
             signature: None,
@@ -75,20 +74,20 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn generate_allowed_syn(new_certificate: Option<Certificate>, knowledge: Vec<ChainCertification>) -> ConnectionPacket {
+    pub fn generate_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN {
                 new_certificate,
-                knowledge,
+                knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: Vec<ChainCertification>) -> ConnectionPacket {
+    pub fn generate_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN_ACK {
                 new_certificate,
-                knowledge,
+                knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
@@ -105,9 +104,8 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn sign(mut self, server_nonce: &Nonce, client_nonce: &Nonce, eq_pri_key: &PrivateKey) -> ConnectionPacket {
-        let pri_key = PKey::private_key_from_pem(eq_pri_key).unwrap();
-        let mut signer = Signer::new(MessageDigest::sha256(), &pri_key).unwrap();
+    pub fn sign(mut self, server_nonce: &Nonce, client_nonce: &Nonce, eq_pri_key: &PKey<Private>) -> ConnectionPacket {
+        let mut signer = Signer::new(MessageDigest::sha256(), eq_pri_key).unwrap();
         signer.update(self.payload.as_bytes()).unwrap();
         signer.update(server_nonce).unwrap();
         signer.update(client_nonce).unwrap();

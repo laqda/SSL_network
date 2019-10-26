@@ -8,8 +8,6 @@ pub enum SSLNetworkError {
     InvalidPort {
         port: String,
     },
-    #[fail(display = "[ERROR] Fail during equipment creation because self certificate was not valid")]
-    EquipmentCreationFailInvalidSelfCertificate {},
     #[fail(display = "[ERROR] Invalid address : {}", address)]
     InvalidAddress {
         address: String,
@@ -24,4 +22,12 @@ pub enum SSLNetworkError {
     InvalidPayload {},
     #[fail(display = "[ERROR] Invalid signature")]
     InvalidSignature {},
+    #[fail(display = "[ERROR] Invalid certificate format")]
+    InvalidCertificateFormat {},
+    #[fail(display = "[ERROR] Invalid certificate")]
+    InvalidCertificate {},
+    #[fail(display = "[ERROR] Equipment not found")]
+    EquipmentNotFound {},
+    #[fail(display = "[ERROR] Certificate not found")]
+    CertificateNotFound {},
 }
