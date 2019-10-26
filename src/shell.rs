@@ -202,6 +202,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
             let verified_knowledge = verify_chains(knowledge, peer_pub_key.clone());
+            eq.get_network().add_chains(verified_knowledge);
         }
         ConnectionPacketTypes::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -294,6 +295,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         ConnectionPacketTypes::ALLOWED_SYN { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
             let verified_knowledge = verify_chains(knowledge, peer_pub_key.clone());
+            eq.get_network().add_chains(verified_knowledge);
         }
         ConnectionPacketTypes::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -448,14 +450,21 @@ fn verify_chains(knowledge: Vec<ChainCertification>, root_pub_key: PublicKey) ->
 
         let mut pred_pub_key = node_certified_pub_key;
         for ((name, pub_key), cert) in chain {
+            println!("name : {}", name.clone());
+            println!("pub_key : {}", String::from_utf8(pub_key.clone()).unwrap());
+            println!("pub_key : {}", String::from_utf8(pred_pub_key.clone()).unwrap());
             let cert = match X509::from_pem(&cert) {
                 Ok(c) => c,
                 Err(_) => return false,
             };
-            if cert.public_key().unwrap().public_key_to_pem().unwrap() != pub_key {
+            let cert_pub_key = cert.public_key().unwrap().public_key_to_pem().unwrap();
+            println!("cert_pub_key : {}", String::from_utf8(pred_pub_key.clone()).unwrap());
+            if cert_pub_key != pred_pub_key {
+                println!("false 1");
                 return false;
             }
-            if !cert.verify(&PKey::public_key_from_pem(&pred_pub_key).unwrap()).unwrap() {
+            if !cert.verify(&PKey::public_key_from_pem(&pub_key).unwrap()).unwrap() {
+                println!("false 2");
                 return false;
             }
             pred_pub_key = pub_key;

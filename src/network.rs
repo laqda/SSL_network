@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use petgraph::graph::{NodeIndex, node_index};
 use petgraph::visit::{depth_first_search, DfsEvent, Control};
 use crate::shared_types::{PublicKey, Certificate};
+use openssl::x509::X509;
 
 type NetEdge = Certificate;
 type NetGraph = Graph<Equipment, NetEdge, Directed, u32>;
@@ -104,6 +105,17 @@ impl Network {
             public_key: eq.pub_key.clone(),
             chain: path,
         })
+    }
+    pub fn add_chains(&mut self, chains: Vec<ChainCertification>) {
+        for chain in chains {
+            for ((issuer_name, issuer_pub_key), certificate) in chain.chain {
+                let x509 = X509::from_pem(&certificate).unwrap();
+                let subject_name = x509.subject_name().entries().last().unwrap().data().as_utf8().unwrap().to_string();
+                let subject_pub_key = x509.public_key().unwrap().public_key_to_pem().unwrap();
+                println!("add");
+                self.add_certification(subject_name, subject_pub_key, issuer_name, issuer_pub_key, certificate);
+            }
+        }
     }
 }
 
