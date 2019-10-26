@@ -9,6 +9,9 @@ use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::Hash;
 use std::collections::hash_map::DefaultHasher;
 use openssl::x509::X509;
+use crate::network::ChainCertification;
+use crate::shared_types::PublicKey;
+use openssl::pkey::PKey;
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<Equipment>>>);
 
@@ -196,8 +199,9 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
-        ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate, knowledge} => {
+        ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
+            let verified_knowledge = verify_chains(knowledge, peer_pub_key.clone());
         }
         ConnectionPacketTypes::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -289,6 +293,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     match payload {
         ConnectionPacketTypes::ALLOWED_SYN { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
+            let verified_knowledge = verify_chains(knowledge, peer_pub_key.clone());
         }
         ConnectionPacketTypes::REFUSED => {
             return Err(SSLNetworkError::ConnectionRefused {});
@@ -434,4 +439,30 @@ fn allow_certify_new_equipment() -> ResultSSL<bool> {
     }
     let response = response.trim();
     Ok(response == "y")
+}
+
+fn verify_chains(knowledge: Vec<ChainCertification>, root_pub_key: PublicKey) -> Vec<ChainCertification> {
+    knowledge.into_iter().filter(|chain| {
+        let node_certified_pub_key = chain.public_key.clone();
+        let chain = chain.chain.clone();
+
+        let mut pred_pub_key = node_certified_pub_key;
+        for ((name, pub_key), cert) in chain {
+            let cert = match X509::from_pem(&cert) {
+                Ok(c) => c,
+                Err(_) => return false,
+            };
+            if cert.public_key().unwrap().public_key_to_pem().unwrap() != pub_key {
+                return false;
+            }
+            if !cert.verify(&PKey::public_key_from_pem(&pred_pub_key).unwrap()).unwrap() {
+                return false;
+            }
+            pred_pub_key = pub_key;
+        }
+        if root_pub_key.clone() != pred_pub_key {
+            return false;
+        }
+        true
+    }).collect()
 }
