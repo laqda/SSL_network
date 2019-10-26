@@ -1,3 +1,4 @@
+use serde::{Serialize, Deserialize};
 use petgraph::{Graph, Directed};
 use std::collections::HashMap;
 use petgraph::graph::{NodeIndex, node_index};
@@ -73,8 +74,10 @@ impl Network {
         paths
     }
     pub fn get_certification_chain(&self, i: usize) -> Option<ChainCertification> {
+        let graph = &self.graph;
         let start = node_index(self.root_node);
         let goal = node_index(i);
+        let mut predecessor = vec![NodeIndex::end(); graph.node_count()];
         depth_first_search(graph, Some(start), |event| {
             if let DfsEvent::TreeEdge(u, v) = event {
                 predecessor[v.index()] = u;
@@ -129,6 +132,7 @@ impl Equipment {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 #[derive(Clone)]
 pub struct ChainCertification {
     pub name: String,

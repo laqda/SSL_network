@@ -5,6 +5,7 @@ use crate::errors::{SSLNetworkError, ResultSSL};
 use openssl::pkey::PKey;
 use getrandom;
 use crate::shared_types::{PublicKey, Certificate, PrivateKey};
+use crate::network::ChainCertification;
 
 pub type Nonce = [u8; 32];
 
@@ -37,9 +38,11 @@ pub enum ConnectionPacketTypes {
     DISCOVER_ACK,
     ALLOWED_SYN {
         new_certificate: Option<Certificate>,
+        knowledge: Vec<ChainCertification>,
     },
     ALLOWED_SYN_ACK {
         new_certificate: Option<Certificate>,
+        knowledge: Vec<ChainCertification>,
     },
     ALLOWED_ACK,
     REFUSED,
@@ -72,18 +75,20 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn generate_allowed_syn(new_certificate: Option<Certificate>) -> ConnectionPacket {
+    pub fn generate_allowed_syn(new_certificate: Option<Certificate>, knowledge: Vec<ChainCertification>) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN {
                 new_certificate,
+                knowledge,
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_allowed_syn_ack(new_certificate: Option<Certificate>) -> ConnectionPacket {
+    pub fn generate_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: Vec<ChainCertification>) -> ConnectionPacket {
         ConnectionPacket {
             payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN_ACK {
                 new_certificate,
+                knowledge,
             }).unwrap(),
             signature: None,
         }

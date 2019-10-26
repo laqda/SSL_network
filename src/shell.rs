@@ -186,7 +186,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         false => None,
     };
 
-    let packet = ConnectionPacket::generate_allowed_syn(generated_new_certificate.clone());
+    let packet = ConnectionPacket::generate_allowed_syn(generated_new_certificate.clone(), eq.get_network().get_certified_equipments().clone());
     let packet = packet.sign(&local_nonce, &peer_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
@@ -196,7 +196,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
-        ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate } => {
+        ConnectionPacketTypes::ALLOWED_SYN_ACK { new_certificate, knowledge} => {
             received_new_certificate = new_certificate;
         }
         ConnectionPacketTypes::REFUSED => {
@@ -287,7 +287,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
     packet.verify(&peer_nonce, &local_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
-        ConnectionPacketTypes::ALLOWED_SYN { new_certificate } => {
+        ConnectionPacketTypes::ALLOWED_SYN { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
         }
         ConnectionPacketTypes::REFUSED => {
@@ -321,7 +321,8 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<Equipment>>) -> Result
         false => None,
     };
 
-    let packet = ConnectionPacket::generate_allowed_syn_ack(generated_new_certificate.clone());
+    let knowledge = eq.get_network().get_certified_equipments().clone();
+    let packet = ConnectionPacket::generate_allowed_syn_ack(generated_new_certificate.clone(), knowledge);
     let packet = packet.sign(&peer_nonce, &local_nonce, eq_pri_key);
     connection_send(&stream, packet)?;
 
