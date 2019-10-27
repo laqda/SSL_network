@@ -6,7 +6,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use crate::network::Network;
 use crate::certification::{Equipment, CertificationChain};
@@ -153,6 +153,12 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         }
     }
 
+    let mut hasher = DefaultHasher::new();
+    let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
+    connection_identifier.hash(&mut hasher);
+    let connection_identifier = hasher.finish();
+    println!("[INFO] Connection identifier : {}", connection_identifier);
+
     let peer_eq = Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() };
     let should_generate_new_certificate = match eq.get_network().is_equipment_certified(&peer_eq)? { // test if peer belongs to local knowledge
         true => {
@@ -160,8 +166,6 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
             !eq.get_network().is_equipment_directly_certified(&peer_eq)?
         }
         false => {
-            let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
-            println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = Packet::generate_refused();
                 let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
@@ -269,6 +273,12 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
     send_packet(&stream, packet)?;
 
+    let mut hasher = DefaultHasher::new();
+    let connection_identifier = ConnectionIdentifier { client_nonce: local_nonce.clone(), server_nonce: peer_nonce.clone() };
+    connection_identifier.hash(&mut hasher);
+    let connection_identifier = hasher.finish();
+    println!("[INFO] Connection identifier : {}", connection_identifier);
+
     let received_new_certificate;
 
     let packet = receive_packet(&stream)?;
@@ -295,8 +305,6 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
             !eq.get_network().is_equipment_directly_certified(&peer_eq)?
         }
         false => {
-            let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
-            println!("[INFO] Connection identifier : {:#?}", connection_identifier.hash(&mut DefaultHasher::new()));
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = Packet::generate_refused();
                 let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
