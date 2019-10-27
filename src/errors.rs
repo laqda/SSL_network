@@ -13,9 +13,9 @@ pub enum SSLNetworkError {
         address: String,
     },
     #[fail(display = "[ERROR] Process violation")]
-    ConnectionProtocolViolation {},
-    #[fail(display = "[ERROR] Connection refused")]
-    ConnectionRefused {},
+    ProtocolViolation {},
+    #[fail(display = "[ERROR] Receive a refuse")]
+    Refused {},
     #[fail(display = "[ERROR] Connection loss")]
     NoConnection {},
     #[fail(display = "[ERROR] Invalid payload")]

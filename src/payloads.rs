@@ -15,7 +15,7 @@ pub fn gen_nonce() -> Nonce {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ConnectionPacket {
+pub struct Packet {
     payload: String,
     signature: Option<Vec<u8>>,
 }
@@ -23,7 +23,8 @@ pub struct ConnectionPacket {
 #[allow(non_camel_case_types)]
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "data")]
-pub enum ConnectionPacketTypes {
+pub enum PacketTypes {
+    // COMMON
     DISCOVER_SYN {
         name: String,
         pub_key: PublicKey,
@@ -35,22 +36,31 @@ pub enum ConnectionPacketTypes {
         nonce: Nonce,
     },
     DISCOVER_ACK,
-    ALLOWED_SYN {
-        new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
-    },
-    ALLOWED_SYN_ACK {
-        new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
-    },
-    ALLOWED_ACK,
     REFUSED,
+    // CONNECTION
+    CONNECTION_ALLOWED_SYN {
+        new_certificate: Option<Certificate>,
+        knowledge: Vec<CertificationChain>,
+    },
+    CONNECTION_ALLOWED_SYN_ACK {
+        new_certificate: Option<Certificate>,
+        knowledge: Vec<CertificationChain>,
+    },
+    CONNECTION_ALLOWED_ACK,
+    // SYNCHRONIZATION
+    SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
+        knowledge: Vec<CertificationChain>,
+    },
+    SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
+        knowledge: Vec<CertificationChain>,
+    },
+    SYNCHRONIZATION_SEND_KNOWLEDGE_ACK,
 }
 
-impl ConnectionPacket {
-    pub fn generate_discover_syn(name: &str, pub_key: &PublicKey, nonce: Nonce) -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::DISCOVER_SYN {
+impl Packet {
+    pub fn generate_discover_syn(name: &str, pub_key: &PublicKey, nonce: Nonce) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::DISCOVER_SYN {
                 name: name.clone().to_string(),
                 pub_key: pub_key.clone(),
                 nonce,
@@ -58,9 +68,9 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn generate_discover_syn_ack(name: &str, pub_key: &PublicKey, nonce: Nonce) -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::DISCOVER_SYN_ACK {
+    pub fn generate_discover_syn_ack(name: &str, pub_key: &PublicKey, nonce: Nonce) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::DISCOVER_SYN_ACK {
                 name: name.clone().to_string(),
                 pub_key: pub_key.clone(),
                 nonce,
@@ -68,43 +78,65 @@ impl ConnectionPacket {
             signature: None,
         }
     }
-    pub fn generate_discover_ack() -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::DISCOVER_ACK {}).unwrap(),
+    pub fn generate_discover_ack() -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::DISCOVER_ACK {}).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN {
+    pub fn generate_refused() -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::REFUSED {}).unwrap(),
+            signature: None,
+        }
+    }
+    pub fn generate_connection_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN {
                 new_certificate,
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_SYN_ACK {
+    pub fn generate_connection_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN_ACK {
                 new_certificate,
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_allowed_ack() -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::ALLOWED_ACK {}).unwrap(),
+    pub fn generate_connection_allowed_ack() -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_ACK {}).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_refused() -> ConnectionPacket {
-        ConnectionPacket {
-            payload: serde_json::to_string(&ConnectionPacketTypes::REFUSED {}).unwrap(),
+    pub fn generate_synchronization_send_knowledge_syn(knowledge: &Vec<CertificationChain>) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
+                knowledge: knowledge.clone(),
+            }).unwrap(),
             signature: None,
         }
     }
-    pub fn sign(mut self, server_nonce: &Nonce, client_nonce: &Nonce, eq_pri_key: &PKey<Private>) -> ConnectionPacket {
+    pub fn generate_synchronization_send_knowledge_syn_ack(knowledge: &Vec<CertificationChain>) -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
+                knowledge: knowledge.clone(),
+            }).unwrap(),
+            signature: None,
+        }
+    }
+    pub fn generate_synchronization_send_knowledge_ack() -> Packet {
+        Packet {
+            payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_ACK {}).unwrap(),
+            signature: None,
+        }
+    }
+    pub fn sign(mut self, server_nonce: &Nonce, client_nonce: &Nonce, eq_pri_key: &PKey<Private>) -> Packet {
         let mut signer = Signer::new(MessageDigest::sha256(), eq_pri_key).unwrap();
         signer.update(self.payload.as_bytes()).unwrap();
         signer.update(server_nonce).unwrap();
@@ -118,10 +150,10 @@ impl ConnectionPacket {
         verifier.update(self.payload.as_bytes()).unwrap();
         verifier.update(server_nonce).unwrap();
         verifier.update(client_nonce).unwrap();
-        match verifier.verify(self.signature.clone().ok_or(SSLNetworkError::ConnectionProtocolViolation {})?.as_ref()).unwrap() {
+        match verifier.verify(self.signature.clone().ok_or(SSLNetworkError::ProtocolViolation {})?.as_ref()).unwrap() {
             true => Ok(()),
             false => Err(SSLNetworkError::InvalidSignature {})
         }
     }
-    pub fn get_payload(&self) -> Result<ConnectionPacketTypes, SSLNetworkError> { serde_json::from_str(&self.payload).map_err(|_| SSLNetworkError::InvalidPayload {}) }
+    pub fn get_payload(&self) -> Result<PacketTypes, SSLNetworkError> { serde_json::from_str(&self.payload).map_err(|_| SSLNetworkError::InvalidPayload {}) }
 }
