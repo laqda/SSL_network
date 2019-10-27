@@ -49,9 +49,11 @@ pub enum PacketTypes {
     CONNECTION_ALLOWED_ACK,
     // SYNCHRONIZATION
     SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
+        new_certificate: Option<Certificate>,
         knowledge: Vec<CertificationChain>,
     },
     SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
+        new_certificate: Option<Certificate>,
         knowledge: Vec<CertificationChain>,
     },
     SYNCHRONIZATION_SEND_KNOWLEDGE_ACK,
@@ -114,17 +116,19 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_syn(knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_synchronization_send_knowledge_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
+                new_certificate,
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_syn_ack(knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_synchronization_send_knowledge_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
+                new_certificate,
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,

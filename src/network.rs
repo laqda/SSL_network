@@ -14,6 +14,7 @@ pub trait Network {
     fn add_certificate(&mut self, certificate: &Certificate) -> ResultSSL<()>;
     fn contains(&self, equipment: &Equipment) -> bool;
     fn is_equipment_certified(&self, equipment: &Equipment) -> ResultSSL<bool>;
+    fn is_equipment_directly_certified(&self, equipment: &Equipment) -> ResultSSL<bool>;
     fn get_chain_certifications(&self, equipment: &Equipment) -> ResultSSL<CertificationChain>;
     fn get_chains_certifications(&self) -> ResultSSL<Vec<CertificationChain>>;
     fn add_chains_certifications(&mut self, chains: Vec<CertificationChain>) -> ResultSSL<()>;
@@ -61,6 +62,18 @@ impl Network for EquipmentNetwork {
             Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false),
             Err(e) => return Err(e),
         };
+        chain.is_valid()
+    }
+    fn is_equipment_directly_certified(&self, equipment: &Equipment) -> ResultSSL<bool> {
+        let chain = match self.get_chain_certifications(equipment) {
+            Ok(chain) => chain,
+            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false),
+            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        if chain.0.len() != 1 {
+            return Ok(false);
+        }
         chain.is_valid()
     }
     fn get_chain_certifications(&self, equipment: &Equipment) -> ResultSSL<CertificationChain> {
