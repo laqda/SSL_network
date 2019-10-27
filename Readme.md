@@ -96,7 +96,7 @@ The user should approve the insertion of the peer equipment in each terminal.
 
 * Connect 1 with 3
 
-The user does not have to approve the insertion of the peer equipment in each terminal because Equipment1 has a certification chain to Equipment2 and Equipment2 has a certification chain to Equipment1.
+The user does not have to approve the insertion of the peer equipment in each terminal because Equipment1 has a certification chain to Equipment3 and Equipment3 has a certification chain to Equipment1.
 
 At this step you should also see that they automatically exchange new certificates.
 
