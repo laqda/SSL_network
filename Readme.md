@@ -105,7 +105,7 @@ At this step you should also see that they automatically exchange new certificat
 > con:l
 ```
 
-(shell Equipment2)
+(shell Equipment3)
 ```
 > con:c 127.0.0.1:3201
 ```
