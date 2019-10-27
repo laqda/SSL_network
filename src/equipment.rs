@@ -17,8 +17,7 @@ pub struct SimulatedEquipment {
 }
 
 impl SimulatedEquipment {
-    pub fn new(address: Ipv4Addr, port: u16) -> ResultSSL<SimulatedEquipment> {
-        let name = format!("Equipment_{}:{}", address, port);
+    pub fn new(address: Ipv4Addr, port: u16, name: String) -> ResultSSL<SimulatedEquipment> {
         let rsa = Rsa::generate(2048).unwrap();
         let pri_key: PKey<Private> = PKey::from_rsa(rsa).unwrap();
         let pub_key = pri_key.public_key_to_pem().unwrap();

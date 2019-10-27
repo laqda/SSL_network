@@ -8,7 +8,7 @@ use std::process;
 use clap::{App, Arg, ArgMatches};
 use std::str::FromStr;
 use shrust::ShellIO;
-use std::net::{Ipv4Addr};
+use std::net::Ipv4Addr;
 use crate::equipment::SimulatedEquipment;
 
 mod errors;
@@ -39,7 +39,15 @@ fn main() {
             .multiple(false)
             .empty_values(false)
             .required(false)
-            .default_value("127.0.0.1")
+            .default_value("127.0.0.1"))
+        .arg(Arg::with_name("name")
+            .help("Equipment's name")
+            .short("n")
+            .long("name")
+            .takes_value(true)
+            .multiple(false)
+            .empty_values(false)
+            .required(false)
         ).get_matches();
     if let Err(e) = start(matches) {
         println!("{}", e);
@@ -64,7 +72,13 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
         }
     };
 
-    let eq = SimulatedEquipment::new(address, port)?;
+    let arg_name = matches.value_of("name");
+    let name = match arg_name {
+        Some(name) => name.to_string(),
+        None => format!("Equipment_{}:{}", address, port),
+    };
+
+    let eq = SimulatedEquipment::new(address, port, name)?;
     let mut shell = EquipmentShell::new(eq);
     shell.0.run_loop(&mut ShellIO::default());
     Ok(())
