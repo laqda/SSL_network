@@ -19,10 +19,10 @@ impl EquipmentShell {
         shell.new_command("infos", "Display equipment infos", 0, infos);
         shell.new_command("clear", "Clear shell", 0, clear);
         shell.new_command("certified", "Display certified equipments", 0, certified);
-        shell.new_command("con:l", "Start a connection as server", 0, con_listen);
-        shell.new_command("con:c", "Start a connection as client (ex: con:c 127.0.0.1:3202)", 1, con_connect);
-        shell.new_command("syn:l", "Start a synchronization as server", 0, syn_listen);
-        shell.new_command("syn:c", "Start a synchronization as client (ex: syn:c 127.0.0.1:3202)", 1, syn_connect);
+        shell.new_command("con:server", "Start a connection as server", 0, con_server);
+        shell.new_command("con:client", "Start a connection as client (ex: con:client 127.0.0.1:3202)", 1, con_client);
+        shell.new_command("syn:server", "Start a synchronization as server", 0, syn_server);
+        shell.new_command("syn:client", "Start a synchronization as client (ex: syn:client 127.0.0.1:3202)", 1, syn_client);
         EquipmentShell(shell)
     }
 }
@@ -55,7 +55,7 @@ struct ConnectionIdentifier {
 
 // CONNECTION
 
-fn con_listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, _args: &[&str]) -> ExecResult {
+fn con_server(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, _args: &[&str]) -> ExecResult {
     let eq = ref_eq.lock().unwrap();
 
     let address = eq.get_socket_address();
@@ -78,7 +78,7 @@ fn con_listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Si
     Ok(())
 }
 
-fn con_connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, args: &[&str]) -> ExecResult {
+fn con_client(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, args: &[&str]) -> ExecResult {
     let eq = ref_eq.lock().unwrap();
 
     let socket: SocketAddr = match args[0].parse() {
@@ -369,7 +369,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
 
 // SYNCHRONIZATION
 
-fn syn_listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, _args: &[&str]) -> ExecResult {
+fn syn_server(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, _args: &[&str]) -> ExecResult {
     let eq = ref_eq.lock().unwrap();
 
     let address = eq.get_socket_address();
@@ -392,7 +392,7 @@ fn syn_listen(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Si
     Ok(())
 }
 
-fn syn_connect(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, args: &[&str]) -> ExecResult {
+fn syn_client(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, args: &[&str]) -> ExecResult {
     let eq = ref_eq.lock().unwrap();
 
     let socket: SocketAddr = match args[0].parse() {

@@ -11,16 +11,16 @@ ssl_network -a 127.0.0.1 -p 3201 -n Equipment1
 When the simulated equipment is generated, a shell starts. The available commands are :
 
 ```
-certified  :  Display certified equipments
-clear      :  Clear shell
-con:c      :  Start a connection as client (ex: con:c 127.0.0.1:3202)
-con:l      :  Start a connection as server
-help       :  Print this help
-history    :  Print commands history or run a command from it
-infos      :  Display equipment infos
-quit       :  Quit
-syn:c      :  Start a synchronization as client (ex: syn:c 127.0.0.1:3202)
-syn:l      :  Start a synchronization as server
+certified   :  Display certified equipments
+clear       :  Clear shell
+con:client  :  Start a connection as client (ex: con:client 127.0.0.1:3202)
+con:server  :  Start a connection as server
+help        :  Print this help
+history     :  Print commands history or run a command from it
+infos       :  Display equipment infos
+quit        :  Quit
+syn:client  :  Start a synchronization as client (ex: syn:client 127.0.0.1:3202)
+syn:server  :  Start a synchronization as server
 ```
 
 ## Build
@@ -58,40 +58,40 @@ ssl_network -a 127.0.0.1 -p 3203 -n Equipment3
 
 The user should approve the insertion of the peer equipment in each terminal.
 
-(shell Equipment1)
+> shell Equipment1
 ```
-> con:l
+> con:server
 ```
 
-(shell Equipment2)
+> shell Equipment2
 ```
-> con:c 127.0.0.1:3201
+> con:client 127.0.0.1:3201
 ```
 
 * Connect 2 with 3
 
 The user should approve the insertion of the peer equipment in each terminal.
 
-(shell Equipment2)
+> shell Equipment2
 ```
-> con:l
+> con:server
 ```
 
-(shell Equipment3)
+> shell Equipment3
 ```
-> con:c 127.0.0.1:3202
+> con:client 127.0.0.1:3202
 ```
 
 * Synchronize 1 with 2
 
-(shell Equipment1)
+> shell Equipment1
 ```
-> syn:l
+> syn:server
 ```
 
-(shell Equipment2)
+> shell Equipment2
 ```
-> syn:c 127.0.0.1:3201
+> syn:client 127.0.0.1:3201
 ```
 
 * Connect 1 with 3
@@ -100,12 +100,12 @@ The user does not have to approve the insertion of the peer equipment in each te
 
 At this step you should also see that they automatically exchange new certificates.
 
-(shell Equipment1)
+> shell Equipment1
 ```
-> con:l
+> con:server
 ```
 
-(shell Equipment3)
+> shell Equipment3
 ```
-> con:c 127.0.0.1:3201
+> con:client 127.0.0.1:3201
 ```
