@@ -22,7 +22,7 @@ pub struct Packet {
 
 #[allow(non_camel_case_types)]
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type")]
 pub enum PacketTypes {
     // COMMON
     DISCOVER_SYN {
