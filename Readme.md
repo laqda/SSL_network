@@ -82,21 +82,9 @@ The user should approve the insertion of the peer equipment in each terminal.
 > con:client 127.0.0.1:3202
 ```
 
-* Synchronize 1 with 2
-
-> shell Equipment1
-```
-> syn:server
-```
-
-> shell Equipment2
-```
-> syn:client 127.0.0.1:3201
-```
-
 * Connect 1 with 3
 
-The user does not have to approve the insertion of the peer equipment in each terminal because Equipment1 has a certification chain to Equipment3 and Equipment3 has a certification chain to Equipment1.
+The user does not have to approve the insertion of the peer equipment in each terminal because Equipment1 receive a certification chain to Equipment3 and Equipment3 has a certification chain to Equipment1.
 
 At this step you should also see that they automatically exchange new certificates.
 
