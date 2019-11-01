@@ -40,7 +40,7 @@ Follow those simple commands to see in action a "friends of my friends are my fr
 
 Equipment1 and Equipment3 will be able to connect automatically even without connecting before. 
 
-* Launch three equipments in different terminals
+#### Launch three equipments in different terminals
 
 ```shell script
 ssl_network -a 127.0.0.1 -p 3201 -n Equipment1
