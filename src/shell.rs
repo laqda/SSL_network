@@ -109,10 +109,6 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
 
-    let eq_name = eq.get_name();
-    let eq_pub_key = eq.get_public_key().clone();
-    let eq_pri_key = eq.get_private_key().clone();
-
     let peer_name;
     let peer_pub_key;
     let peer_nonce: Nonce;
@@ -136,8 +132,8 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn_ack(&eq_name, &eq_pub_key, local_nonce);
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -168,7 +164,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         false => {
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = Packet::generate_refused();
-                let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+                let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
                 send_packet(&stream, packet)?;
                 return Err(SSLNetworkError::Refused {});
             }
@@ -183,7 +179,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
 
     let knowledge = eq.get_network().get_chains_certifications()?.clone();
     let packet = Packet::generate_connection_allowed_syn(generated_new_certificate.clone(), &knowledge);
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let received_new_certificate;
@@ -194,7 +190,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     match payload {
         PacketTypes::CONNECTION_ALLOWED_SYN_ACK { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
+            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
             eq.get_network().add_chains_certifications(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
@@ -208,7 +204,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     println!("[INFO] Connection allowed by peer");
 
     let packet = Packet::generate_connection_allowed_ack();
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     if let Some(certificate) = generated_new_certificate {
@@ -239,17 +235,13 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
 
-    let eq_name = eq.get_name();
-    let eq_pub_key = eq.get_public_key().clone();
-    let eq_pri_key = eq.get_private_key().clone();
-
     let peer_name;
     let peer_pub_key;
     let peer_nonce: Nonce;
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn(eq_name.clone(), &eq_pub_key, local_nonce.clone());
+    let packet = Packet::generate_discover_syn(eq.get_name().clone(), &eq.get_public_key(), local_nonce.clone());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -270,7 +262,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     }
 
     let packet = Packet::generate_discover_ack();
-    let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let mut hasher = DefaultHasher::new();
@@ -287,7 +279,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     match payload {
         PacketTypes::CONNECTION_ALLOWED_SYN { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
+            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
             eq.get_network().add_chains_certifications(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
@@ -307,7 +299,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         false => {
             if !allow_certify_new_equipment()? { // ask user to validate connection
                 let packet = Packet::generate_refused();
-                let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+                let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
                 send_packet(&stream, packet)?;
                 return Err(SSLNetworkError::Refused {});
             }
@@ -322,7 +314,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
 
     let knowledge = eq.get_network().get_chains_certifications()?.clone();
     let packet = Packet::generate_connection_allowed_syn_ack(generated_new_certificate.clone(), &knowledge);
-    let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -341,7 +333,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     println!("[INFO] Connection allowed by peer");
 
     let packet = Packet::generate_connection_allowed_ack();
-    let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     if let Some(certificate) = generated_new_certificate {
@@ -423,10 +415,6 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
 
-    let eq_name = eq.get_name();
-    let eq_pub_key = eq.get_public_key().clone();
-    let eq_pri_key = eq.get_private_key().clone();
-
     let peer_name;
     let peer_pub_key;
     let peer_nonce: Nonce;
@@ -450,8 +438,8 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn_ack(&eq_name, &eq_pub_key, local_nonce);
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -473,7 +461,7 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
         }
         false => {
             let packet = Packet::generate_refused();
-            let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+            let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
             send_packet(&stream, packet)?;
             return Err(SSLNetworkError::Refused {});
         }
@@ -489,7 +477,7 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
 
     let knowledge = eq.get_network().get_chains_certifications()?.clone();
     let packet = Packet::generate_synchronization_send_knowledge_syn(generated_new_certificate.clone(), &knowledge);
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let received_new_certificate;
@@ -499,7 +487,7 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK { new_certificate, knowledge } => {
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
+            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
             eq.get_network().add_chains_certifications(verified_knowledge)?;
             received_new_certificate = new_certificate;
         }
@@ -514,7 +502,7 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     println!("[INFO] Synchronization allowed by peer");
 
     let packet = Packet::generate_synchronization_send_knowledge_ack();
-    let packet = packet.sign(&local_nonce, &peer_nonce, &eq_pri_key);
+    let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     if let Some(certificate) = generated_new_certificate {
@@ -545,17 +533,13 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let local_addr = stream.local_addr().unwrap().to_string();
     let peer_addr = stream.peer_addr().unwrap().to_string();
 
-    let eq_name = eq.get_name();
-    let eq_pub_key = eq.get_public_key().clone();
-    let eq_pri_key = eq.get_private_key().clone();
-
     let peer_name;
     let peer_pub_key;
     let peer_nonce: Nonce;
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn(eq_name.clone(), &eq_pub_key, local_nonce.clone());
+    let packet = Packet::generate_discover_syn(eq.get_name().clone(), &eq.get_public_key(), local_nonce.clone());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -576,7 +560,7 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     }
 
     let packet = Packet::generate_discover_ack();
-    let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let received_new_certificate;
@@ -586,7 +570,7 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN { new_certificate, knowledge } => {
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
+            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
             eq.get_network().add_chains_certifications(verified_knowledge)?;
             received_new_certificate = new_certificate;
         }
@@ -604,7 +588,7 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
         }
         false => {
             let packet = Packet::generate_refused();
-            let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+            let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
             send_packet(&stream, packet)?;
             return Err(SSLNetworkError::Refused {});
         }
@@ -620,7 +604,7 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
 
     let knowledge = eq.get_network().get_chains_certifications()?.clone();
     let packet = Packet::generate_synchronization_send_knowledge_syn_ack(generated_new_certificate.clone(), &knowledge);
-    let packet = packet.sign(&peer_nonce, &local_nonce, &eq_pri_key);
+    let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
     let packet = receive_packet(&stream)?;
@@ -723,16 +707,26 @@ fn allow_certify_new_equipment() -> ResultSSL<bool> {
     Ok(response == "y")
 }
 
-fn verify_chains(knowledge: Vec<CertificationChain>, certifier: Equipment) -> Vec<CertificationChain> {
+fn verify_chains(knowledge: Vec<CertificationChain>, certified: Equipment, certifier: Equipment) -> Vec<CertificationChain> {
     knowledge.into_iter().filter(|chain| {
         let certifier = certifier.clone();
-        let chain_certifier = match chain.chain_certifier() {
-            Some(certifier) => certifier.clone(),
+        match chain.chain_certifier() {
+            Some(chain_certifier) => {
+                if certifier != chain_certifier.clone() {
+                    return false;
+                }
+            }
             None => return false, // ignore empty chains
         };
-        if certifier != chain_certifier {
-            return false;
-        }
+        let certified = certified.clone();
+        match chain.chain_certified() {
+            Some(chain_certified) => {
+                if certified != chain_certified.clone() {
+                    return false;
+                }
+            }
+            None => return false, // ignore empty chains
+        };
         chain.is_valid().unwrap()
     }).collect()
 }
