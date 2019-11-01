@@ -14,7 +14,7 @@ pub enum SSLNetworkError {
     },
     #[fail(display = "[ERROR] Process violation")]
     ProtocolViolation {},
-    #[fail(display = "[ERROR] Receive a refuse")]
+    #[fail(display = "[ERROR] Refuse")]
     Refused {},
     #[fail(display = "[ERROR] Connection loss")]
     NoConnection {},

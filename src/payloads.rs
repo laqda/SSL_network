@@ -34,27 +34,30 @@ pub enum PacketTypes {
         name: String,
         pub_key: PublicKey,
         nonce: Nonce,
+        proof: Option<CertificationChain>,
     },
-    DISCOVER_ACK,
+    DISCOVER_ACK {
+        proof: Option<CertificationChain>,
+    },
     REFUSED,
     // CONNECTION
     CONNECTION_ALLOWED_SYN {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
+        knowledge: Vec<Certificate>,
     },
     CONNECTION_ALLOWED_SYN_ACK {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
+        knowledge: Vec<Certificate>,
     },
     CONNECTION_ALLOWED_ACK,
     // SYNCHRONIZATION
     SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
+        knowledge: Vec<Certificate>,
     },
     SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
         new_certificate: Option<Certificate>,
-        knowledge: Vec<CertificationChain>,
+        knowledge: Vec<Certificate>,
     },
     SYNCHRONIZATION_SEND_KNOWLEDGE_ACK,
 }
@@ -70,19 +73,22 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_discover_syn_ack(name: &str, pub_key: &PublicKey, nonce: Nonce) -> Packet {
+    pub fn generate_discover_syn_ack(name: &str, pub_key: &PublicKey, nonce: Nonce, proof: Option<CertificationChain>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::DISCOVER_SYN_ACK {
                 name: name.clone().to_string(),
                 pub_key: pub_key.clone(),
                 nonce,
+                proof,
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_discover_ack() -> Packet {
+    pub fn generate_discover_ack(proof: Option<CertificationChain>) -> Packet {
         Packet {
-            payload: serde_json::to_string(&PacketTypes::DISCOVER_ACK {}).unwrap(),
+            payload: serde_json::to_string(&PacketTypes::DISCOVER_ACK {
+                proof,
+            }).unwrap(),
             signature: None,
         }
     }
@@ -92,7 +98,7 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_connection_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_connection_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN {
                 new_certificate,
@@ -101,7 +107,7 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_connection_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_connection_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN_ACK {
                 new_certificate,
@@ -116,7 +122,7 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_syn(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_synchronization_send_knowledge_syn(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
                 new_certificate,
@@ -125,7 +131,7 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<CertificationChain>) -> Packet {
+    pub fn generate_synchronization_send_knowledge_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
                 new_certificate,

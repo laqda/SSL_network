@@ -9,7 +9,7 @@ use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use crate::network::Network;
-use crate::certification::{Equipment, CertificationChain};
+use crate::certification::{Equipment, CertificationChain, Certificate};
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<SimulatedEquipment>>>);
 
@@ -40,7 +40,7 @@ fn clear(_io: &mut ShellIO, _ref_eq: &mut std::sync::Arc<std::sync::Mutex<Simula
 
 fn certified(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<SimulatedEquipment>>, _args: &[&str]) -> ExecResult {
     let mut eq = ref_eq.lock().unwrap();
-    let chains = eq.get_network().get_chains_certifications().unwrap();
+    let chains = eq.get_network().get_all_chains_certifications_from_root().unwrap();
     for chain in chains {
         println!("{}", chain);
     }
@@ -132,7 +132,9 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce);
+    let proof = eq.get_network().get_chain_certifications_to_root(&Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() })?;
+
+    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce, proof);
     let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
@@ -140,7 +142,14 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
-        PacketTypes::DISCOVER_ACK => {}
+        PacketTypes::DISCOVER_ACK { proof } => {
+            if let Some(proof) = proof {
+                println!("ok");
+                if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
+                    eq.get_network().add_chain_certifications(proof)?;
+                }
+            }
+        }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
         }
@@ -177,7 +186,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         false => None,
     };
 
-    let knowledge = eq.get_network().get_chains_certifications()?.clone();
+    let knowledge = eq.get_network().get_knowledge()?.clone();
     let packet = Packet::generate_connection_allowed_syn(generated_new_certificate.clone(), &knowledge);
     let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
@@ -190,8 +199,8 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     match payload {
         PacketTypes::CONNECTION_ALLOWED_SYN_ACK { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
-            eq.get_network().add_chains_certifications(verified_knowledge)?;
+            let verified_knowledge = verify_certificates(knowledge);
+            eq.get_network().add_certificates(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -247,11 +256,17 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     let packet = receive_packet(&stream)?;
     let payload = packet.get_payload()?;
     match payload {
-        PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce } => {
+        PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce, proof } => {
             println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             peer_name = name.clone();
             peer_pub_key = pub_key.clone();
             peer_nonce = nonce.clone();
+            if let Some(proof) = proof {
+                println!("ok");
+                if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
+                    eq.get_network().add_chain_certifications(proof)?;
+                }
+            }
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -261,7 +276,9 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         }
     }
 
-    let packet = Packet::generate_discover_ack();
+    let proof = eq.get_network().get_chain_certifications_to_root(&Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() })?;
+
+    let packet = Packet::generate_discover_ack(proof);
     let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
@@ -279,8 +296,8 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     match payload {
         PacketTypes::CONNECTION_ALLOWED_SYN { new_certificate, knowledge } => {
             received_new_certificate = new_certificate;
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
-            eq.get_network().add_chains_certifications(verified_knowledge)?;
+            let verified_knowledge = verify_certificates(knowledge);
+            eq.get_network().add_certificates(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -312,7 +329,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
         false => None,
     };
 
-    let knowledge = eq.get_network().get_chains_certifications()?.clone();
+    let knowledge = eq.get_network().get_knowledge()?.clone();
     let packet = Packet::generate_connection_allowed_syn_ack(generated_new_certificate.clone(), &knowledge);
     let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
@@ -438,7 +455,9 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
 
     let local_nonce: Nonce = gen_nonce();
 
-    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce);
+    let proof = eq.get_network().get_chain_certifications_to_root(&Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() })?;
+
+    let packet = Packet::generate_discover_syn_ack(&eq.get_name(), &eq.get_public_key(), local_nonce, proof);
     let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
@@ -446,7 +465,13 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     packet.verify(&local_nonce, &peer_nonce, &peer_pub_key)?;
     let payload = packet.get_payload()?;
     match payload {
-        PacketTypes::DISCOVER_ACK => {}
+        PacketTypes::DISCOVER_ACK { proof } => {
+            if let Some(proof) = proof {
+                if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
+                    eq.get_network().add_chain_certifications(proof)?;
+                }
+            }
+        }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
         }
@@ -475,7 +500,7 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
         false => None,
     };
 
-    let knowledge = eq.get_network().get_chains_certifications()?.clone();
+    let knowledge = eq.get_network().get_knowledge()?.clone();
     let packet = Packet::generate_synchronization_send_knowledge_syn(generated_new_certificate.clone(), &knowledge);
     let packet = packet.sign(&local_nonce, &peer_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
@@ -487,9 +512,9 @@ fn synchronization_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK { new_certificate, knowledge } => {
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
-            eq.get_network().add_chains_certifications(verified_knowledge)?;
             received_new_certificate = new_certificate;
+            let verified_knowledge = verify_certificates(knowledge);
+            eq.get_network().add_certificates(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -545,11 +570,16 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let packet = receive_packet(&stream)?;
     let payload = packet.get_payload()?;
     match payload {
-        PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce } => {
+        PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce, proof } => {
             println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             peer_name = name.clone();
             peer_pub_key = pub_key.clone();
             peer_nonce = nonce.clone();
+            if let Some(proof) = proof {
+                if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
+                    eq.get_network().add_chain_certifications(proof)?;
+                }
+            }
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -559,7 +589,9 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
         }
     }
 
-    let packet = Packet::generate_discover_ack();
+    let proof = eq.get_network().get_chain_certifications_to_root(&Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() })?;
+
+    let packet = Packet::generate_discover_ack(proof);
     let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
 
@@ -570,9 +602,9 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN { new_certificate, knowledge } => {
-            let verified_knowledge = verify_chains(knowledge, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() }, Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() });
-            eq.get_network().add_chains_certifications(verified_knowledge)?;
             received_new_certificate = new_certificate;
+            let verified_knowledge = verify_certificates(knowledge);
+            eq.get_network().add_certificates(verified_knowledge)?;
         }
         PacketTypes::REFUSED => {
             return Err(SSLNetworkError::Refused {});
@@ -602,7 +634,7 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
         false => None,
     };
 
-    let knowledge = eq.get_network().get_chains_certifications()?.clone();
+    let knowledge = eq.get_network().get_knowledge()?.clone();
     let packet = Packet::generate_synchronization_send_knowledge_syn_ack(generated_new_certificate.clone(), &knowledge);
     let packet = packet.sign(&peer_nonce, &local_nonce, &eq.get_private_key());
     send_packet(&stream, packet)?;
@@ -659,6 +691,7 @@ fn receive_packet(stream: &TcpStream) -> ResultSSL<Packet> {
 }
 
 fn send(stream: &TcpStream, packet: String) -> ResultSSL<()> {
+//    println!("[SEND] {}", packet);
     let packet = packet + "\n"; // end of line <-> end of sending data
     let mut writer = BufWriter::new(stream);
     match writer.write_all(packet.as_bytes()) {
@@ -685,6 +718,7 @@ fn receive(stream: &TcpStream) -> ResultSSL<String> {
         }
         _ => {}
     };
+//    println!("[RECV] {}", packet);
     Ok(packet)
 }
 
@@ -707,26 +741,31 @@ fn allow_certify_new_equipment() -> ResultSSL<bool> {
     Ok(response == "y")
 }
 
-fn verify_chains(knowledge: Vec<CertificationChain>, certified: Equipment, certifier: Equipment) -> Vec<CertificationChain> {
-    knowledge.into_iter().filter(|chain| {
-        let certifier = certifier.clone();
-        match chain.chain_certifier() {
-            Some(chain_certifier) => {
-                if certifier != chain_certifier.clone() {
-                    return false;
-                }
+fn is_valid_chain(chain: CertificationChain, certified: Equipment, certifier: Equipment) -> ResultSSL<bool> {
+    match chain.chain_certifier() {
+        Some(chain_certifier) => {
+            if certifier != chain_certifier.clone() {
+                return Ok(false);
             }
-            None => return false, // ignore empty chains
-        };
-        let certified = certified.clone();
-        match chain.chain_certified() {
-            Some(chain_certified) => {
-                if certified != chain_certified.clone() {
-                    return false;
-                }
+        }
+        None => return Ok(false), // ignore empty chains
+    };
+    match chain.chain_certified() {
+        Some(chain_certified) => {
+            if certified != chain_certified.clone() {
+                return Ok(false);
             }
-            None => return false, // ignore empty chains
-        };
-        chain.is_valid().unwrap()
+        }
+        None => return Ok(false), // ignore empty chains
+    };
+    chain.is_valid()
+}
+
+fn verify_certificates(knowledge: Vec<Certificate>) -> Vec<Certificate> {
+    knowledge.into_iter().filter(|certificate| {
+        match certificate.is_valid() {
+            Ok(is_valid) => is_valid,
+            Err(_) => false,
+        }
     }).collect()
 }
