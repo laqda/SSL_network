@@ -54,7 +54,7 @@ ssl_network -a 127.0.0.1 -p 3202 -n Equipment2
 ssl_network -a 127.0.0.1 -p 3203 -n Equipment3
 ```
 
-* Connect 1 with 2
+#### Connect 1 with 2
 
 The user should approve the insertion of the peer equipment in each terminal.
 
@@ -68,7 +68,7 @@ The user should approve the insertion of the peer equipment in each terminal.
 > con:client 127.0.0.1:3201
 ```
 
-* Connect 2 with 3
+#### Connect 2 with 3
 
 The user should approve the insertion of the peer equipment in each terminal.
 
@@ -82,11 +82,13 @@ The user should approve the insertion of the peer equipment in each terminal.
 > con:client 127.0.0.1:3202
 ```
 
-* Connect 1 with 3
+#### Connect 1 with 3
 
-The user does not have to approve the insertion of the peer equipment in each terminal because Equipment1 receive a certification chain to Equipment3 and Equipment3 has a certification chain to Equipment1.
+The user does not have to approve the insertion of the peer equipment in each terminal because :
+- Equipment1 receive a certification chain from Equipment3 that certify Equipment3 from itself
+- Equipment3 has a certification chain that certify Equipment1 from itself
 
-At this step you should also see that they automatically exchange new certificates.
+At this step you should also see that they automatically exchange new certificates too.
 
 > shell Equipment1
 ```
