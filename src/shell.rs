@@ -9,7 +9,7 @@ use std::io::{Write, BufReader, BufRead, BufWriter, stdout};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use crate::network::Network;
-use crate::certification::{Equipment, CertificationChain, Certificate};
+use crate::certification::{Equipment, CertificationChain, Certificate, PublicKey};
 
 pub struct EquipmentShell(pub Shell<Arc<Mutex<SimulatedEquipment>>>);
 
@@ -50,7 +50,9 @@ fn certified(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Sim
 #[derive(Hash)]
 struct ConnectionIdentifier {
     client_nonce: Nonce,
+    client_pub_key: PublicKey,
     server_nonce: Nonce,
+    server_pub_key: PublicKey,
 }
 
 // CONNECTION
@@ -158,7 +160,7 @@ fn connection_server(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     }
 
     let mut hasher = DefaultHasher::new();
-    let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), server_nonce: local_nonce.clone() };
+    let connection_identifier = ConnectionIdentifier { client_nonce: peer_nonce.clone(), client_pub_key: peer_pub_key.clone(), server_nonce: local_nonce.clone(), server_pub_key: eq.get_public_key().clone() };
     connection_identifier.hash(&mut hasher);
     let connection_identifier = hasher.finish();
     println!("[INFO] Connection identifier : {}", connection_identifier);
@@ -283,7 +285,7 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     send_packet(&stream, packet)?;
 
     let mut hasher = DefaultHasher::new();
-    let connection_identifier = ConnectionIdentifier { client_nonce: local_nonce.clone(), server_nonce: peer_nonce.clone() };
+    let connection_identifier = ConnectionIdentifier { client_nonce: local_nonce.clone(), client_pub_key: eq.get_public_key().clone(), server_nonce: peer_nonce.clone(), server_pub_key: peer_pub_key.clone() };
     connection_identifier.hash(&mut hasher);
     let connection_identifier = hasher.finish();
 
