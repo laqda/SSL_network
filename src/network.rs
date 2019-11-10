@@ -98,14 +98,14 @@ impl Network for EquipmentNetwork {
 
     fn get_chain_certifications_to_root(&self, equipment: &Equipment) -> ResultSSL<Option<CertificationChain>> {
         Ok(match self.get_node_index(equipment) {
-            Some(i) => Some(self.get_chain_certifications(self.root_index, i)?),
+            Some(i) => self.get_chain_certifications(self.root_index, i)?,
             None => None,
         })
     }
 
     fn get_chain_certifications_from_root(&self, equipment: &Equipment) -> ResultSSL<Option<CertificationChain>> {
         Ok(match self.get_node_index(equipment) {
-            Some(i) => Some(self.get_chain_certifications(i, self.root_index)?),
+            Some(i) => self.get_chain_certifications(i, self.root_index)?,
             None => None,
         })
     }
@@ -173,7 +173,7 @@ impl EquipmentNetwork {
         }
         None
     }
-    fn get_chain_certifications(&self, certified: usize, certifier: usize) -> ResultSSL<CertificationChain> {
+    fn get_chain_certifications(&self, certified: usize, certifier: usize) -> ResultSSL<Option<CertificationChain>> {
         let root_index = node_index(certifier);
         let goal_index = node_index(certified);
         let mut predecessor = vec![NodeIndex::end(); self.graph.node_count()];
@@ -192,16 +192,16 @@ impl EquipmentNetwork {
             let pred = predecessor[node.index()];
             let certificate_index = match self.graph.find_edge(pred, node) {
                 Some(index) => index,
-                None => return Err(SSLNetworkError::CertificateNotFound {})
+                None => return Ok(None)
             };
             let certificate = match self.graph.edge_weight(certificate_index) {
                 Some(certificate) => certificate,
-                None => return Err(SSLNetworkError::CertificateNotFound {})
+                None => return Ok(None)
             };
             chain.push(certificate.clone());
             node = pred;
         }
         chain.reverse();
-        Ok((CertificationChain)(chain))
+        Ok(Some((CertificationChain)(chain)))
     }
 }

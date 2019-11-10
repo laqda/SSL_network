@@ -41,25 +41,25 @@ pub enum PacketTypes {
     },
     REFUSED,
     // CONNECTION
-    CONNECTION_ALLOWED_SYN {
-        new_certificate: Option<Certificate>,
-        knowledge: Vec<Certificate>,
-    },
+    CONNECTION_ALLOWED_SYN,
     CONNECTION_ALLOWED_SYN_ACK {
         new_certificate: Option<Certificate>,
         knowledge: Vec<Certificate>,
     },
-    CONNECTION_ALLOWED_ACK,
-    // SYNCHRONIZATION
-    SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
+    CONNECTION_ALLOWED_ACK {
         new_certificate: Option<Certificate>,
         knowledge: Vec<Certificate>,
     },
+    // SYNCHRONIZATION
+    SYNCHRONIZATION_SEND_KNOWLEDGE_SYN,
     SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
         new_certificate: Option<Certificate>,
         knowledge: Vec<Certificate>,
     },
-    SYNCHRONIZATION_SEND_KNOWLEDGE_ACK,
+    SYNCHRONIZATION_SEND_KNOWLEDGE_ACK {
+        new_certificate: Option<Certificate>,
+        knowledge: Vec<Certificate>,
+    },
 }
 
 impl Packet {
@@ -98,35 +98,33 @@ impl Packet {
             signature: None,
         }
     }
-    pub fn generate_connection_allowed_syn(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
+    pub fn generate_connection_allowed_syn() -> Packet {
         Packet {
-            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN {
-                new_certificate,
-                knowledge: knowledge.clone(),
-            }).unwrap(),
+            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN {}).unwrap(),
             signature: None,
         }
     }
     pub fn generate_connection_allowed_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_SYN_ACK {
-                new_certificate,
+                new_certificate: new_certificate.clone(),
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_connection_allowed_ack() -> Packet {
+    pub fn generate_connection_allowed_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
-            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_ACK {}).unwrap(),
+            payload: serde_json::to_string(&PacketTypes::CONNECTION_ALLOWED_ACK {
+                new_certificate: new_certificate.clone(),
+                knowledge: knowledge.clone(),
+            }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_syn(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
+    pub fn generate_synchronization_send_knowledge_syn() -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN {
-                new_certificate,
-                knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
@@ -134,15 +132,18 @@ impl Packet {
     pub fn generate_synchronization_send_knowledge_syn_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
             payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_SYN_ACK {
-                new_certificate,
+                new_certificate: new_certificate.clone(),
                 knowledge: knowledge.clone(),
             }).unwrap(),
             signature: None,
         }
     }
-    pub fn generate_synchronization_send_knowledge_ack() -> Packet {
+    pub fn generate_synchronization_send_knowledge_ack(new_certificate: Option<Certificate>, knowledge: &Vec<Certificate>) -> Packet {
         Packet {
-            payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_ACK {}).unwrap(),
+            payload: serde_json::to_string(&PacketTypes::SYNCHRONIZATION_SEND_KNOWLEDGE_ACK {
+                new_certificate: new_certificate.clone(),
+                knowledge: knowledge.clone(),
+            }).unwrap(),
             signature: None,
         }
     }

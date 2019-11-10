@@ -24,6 +24,8 @@ pub enum SSLNetworkError {
     InvalidSignature {},
     #[fail(display = "[ERROR] Invalid certificate format")]
     InvalidCertificateFormat {},
+    #[fail(display = "[ERROR] Invalid public key format")]
+    InvalidPublicKeyFormat {},
     #[fail(display = "[ERROR] Invalid certificate")]
     InvalidCertificate {},
     #[fail(display = "[ERROR] Equipment not found")]

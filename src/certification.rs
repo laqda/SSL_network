@@ -66,7 +66,18 @@ impl Certificate {
             Ok(cert) => cert,
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {})
         };
-        let is_ok = match cert.verify(&PKey::public_key_from_pem(&self.issuer.pub_key).unwrap()) {
+        let cert_pub_key = match cert.public_key() {
+            Ok(cert) => cert.public_key_to_pem().unwrap(),
+            Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {}),
+        };
+        if cert_pub_key != self.subject.pub_key {
+            return Ok(false);
+        }
+        let issuer_pub_key = match PKey::public_key_from_pem(&self.issuer.pub_key) {
+            Ok(pub_key) => pub_key,
+            Err(_) => return Err(SSLNetworkError::InvalidPublicKeyFormat {}),
+        };
+        let is_ok = match cert.verify(&issuer_pub_key) {
             Ok(is_ok) => is_ok,
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {})
         };
