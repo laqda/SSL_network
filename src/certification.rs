@@ -77,6 +77,9 @@ impl Certificate {
             Ok(pub_key) => pub_key,
             Err(_) => return Err(SSLNetworkError::InvalidPublicKeyFormat {}),
         };
+        if issuer_pub_key.clone().public_key_to_pem().unwrap() != self.issuer.pub_key {
+            return Ok(false);
+        }
         let is_ok = match cert.verify(&issuer_pub_key) {
             Ok(is_ok) => is_ok,
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {})
