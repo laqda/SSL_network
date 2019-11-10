@@ -257,10 +257,11 @@ fn connection_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipment>>) 
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce, proof } => {
-            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             peer_name = name.clone();
             peer_pub_key = pub_key.clone();
             peer_nonce = nonce.clone();
+            packet.verify(&peer_nonce, &local_nonce, &peer_pub_key)?;
+            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             if let Some(proof) = proof {
                 if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
                     eq.get_network().add_chain_certifications(proof)?;
@@ -569,10 +570,11 @@ fn synchronization_client(stream: TcpStream, ref_eq: Arc<Mutex<SimulatedEquipmen
     let payload = packet.get_payload()?;
     match payload {
         PacketTypes::DISCOVER_SYN_ACK { name, pub_key, nonce, proof } => {
-            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             peer_name = name.clone();
             peer_pub_key = pub_key.clone();
             peer_nonce = nonce.clone();
+            packet.verify(&peer_nonce, &local_nonce, &peer_pub_key)?;
+            println!("[INFO] DISCOVER from {} as {}", peer_addr, local_addr);
             if let Some(proof) = proof {
                 if is_valid_chain(proof.clone(), Equipment { name: peer_name.clone(), pub_key: peer_pub_key.clone() }, Equipment { name: eq.get_name().clone().to_string(), pub_key: eq.get_public_key().clone() })? {
                     eq.get_network().add_chain_certifications(proof)?;
