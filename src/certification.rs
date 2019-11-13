@@ -34,7 +34,7 @@ pub struct Certificate {
 
 impl Certificate {
     pub fn new(issuer: Equipment, subject: Equipment, issuer_pri_key: PrivateKey) -> Certificate {
-        let subject_pub_key = PKey::public_key_from_pem(&subject.pub_key).unwrap();
+        let subject_pub_key = PKey::public_key_from_pem(&subject.pub_key).unwrap(); // try to parse subject public key
 
         let mut subject_name_builder = X509Name::builder().unwrap();
         subject_name_builder.append_entry_by_nid(Nid::COMMONNAME, &subject.name).unwrap();
@@ -49,8 +49,8 @@ impl Certificate {
         builder.set_subject_name(&subject_name.as_ref()).unwrap();
         builder.set_issuer_name(&issuer_name.as_ref()).unwrap();
         builder.set_pubkey(&subject_pub_key).unwrap();
-        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
-        builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()).unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap(); // not valid before today
+        builder.set_not_after(&Asn1Time::days_from_now(7).unwrap()).unwrap(); // not valid after a week
         builder.sign(&issuer_pri_key, MessageDigest::sha256()).unwrap();
 
         let cert = builder.build();
@@ -62,25 +62,25 @@ impl Certificate {
         }
     }
     pub fn is_valid(&self) -> ResultSSL<bool> {
-        let cert = match X509::from_pem(&self.cert) {
+        let cert = match X509::from_pem(&self.cert) { // is certificate format valid
             Ok(cert) => cert,
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {})
         };
-        let cert_pub_key = match cert.public_key() {
+        let cert_pub_key = match cert.public_key() { // is the certificate pub key format valid
             Ok(cert) => cert.public_key_to_pem().unwrap(),
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {}),
         };
-        if cert_pub_key != self.subject.pub_key {
+        if cert_pub_key != self.subject.pub_key { // does subject inside cert correspond to saved subject
             return Ok(false);
         }
-        let issuer_pub_key = match PKey::public_key_from_pem(&self.issuer.pub_key) {
+        let issuer_pub_key = match PKey::public_key_from_pem(&self.issuer.pub_key) { // is issuer public key format valid
             Ok(pub_key) => pub_key,
             Err(_) => return Err(SSLNetworkError::InvalidPublicKeyFormat {}),
         };
-        if issuer_pub_key.clone().public_key_to_pem().unwrap() != self.issuer.pub_key {
+        if issuer_pub_key.clone().public_key_to_pem().unwrap() != self.issuer.pub_key { // does issuer inside cert correspond to saved issuer
             return Ok(false);
         }
-        let is_ok = match cert.verify(&issuer_pub_key) {
+        let is_ok = match cert.verify(&issuer_pub_key) { // verify signature
             Ok(is_ok) => is_ok,
             Err(_) => return Err(SSLNetworkError::InvalidCertificateFormat {})
         };
@@ -112,31 +112,34 @@ impl fmt::Display for Certificate {
 pub struct CertificationChain(pub Vec<Certificate>);
 
 impl CertificationChain {
+    // main certifier
     pub fn chain_certifier(&self) -> Option<&Equipment> {
         match self.0.first() {
             Some(certificate) => Some(&certificate.issuer),
             None => None,
         }
     }
+    // main certified
     pub fn chain_certified(&self) -> Option<&Equipment> {
         match self.0.last() {
             Some(certificate) => Some(&certificate.subject),
             None => None,
         }
     }
+    // is chain valid
     pub fn is_valid(&self) -> ResultSSL<bool> {
-        let mut certified = match self.chain_certifier() {
-            Some(certificate) => certificate.clone(),
+        let mut certifier = match self.chain_certifier() {
+            Some(certifier) => certifier.clone(),
             None => return Ok(true), // empty chain
         };
         for certificate in self.0.clone() {
-            if certified != certificate.issuer {
+            if certifier != certificate.issuer { // certifier is the wanted one
                 return Ok(false);
             }
-            if !certificate.is_valid()? {
+            if !certificate.is_valid()? { // is certificate valid it self
                 return Ok(false);
             }
-            certified = certificate.subject.clone();
+            certifier = certificate.subject.clone(); // subject of current block should be issuer of the next one if it exists
         }
         Ok(true)
     }

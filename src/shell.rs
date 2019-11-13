@@ -48,7 +48,7 @@ fn certified(_io: &mut ShellIO, ref_eq: &mut std::sync::Arc<std::sync::Mutex<Sim
 }
 
 #[derive(Hash)]
-struct ConnectionIdentifier {
+struct ConnectionIdentifier { // display a unique hash on local and peer, must be checked visually by the user
     client_nonce: Nonce,
     client_pub_key: PublicKey,
     server_nonce: Nonce,
@@ -723,6 +723,7 @@ fn receive(stream: &TcpStream) -> ResultSSL<String> {
     Ok(packet)
 }
 
+// ask the user if he allows to add peer equipment to is knowledge
 fn allow_certify_new_equipment() -> ResultSSL<bool> {
     print!("Add new equipment to network (y/N) ? ");
     match stdout().flush() {
@@ -742,8 +743,9 @@ fn allow_certify_new_equipment() -> ResultSSL<bool> {
     Ok(response == "y")
 }
 
+// verify chain, certified is the chain_certified and certifier is the chain_certifier
 fn is_valid_chain(chain: CertificationChain, certified: Equipment, certifier: Equipment) -> ResultSSL<bool> {
-    match chain.chain_certifier() {
+    match chain.chain_certifier() { // is chain certifier the one we want
         Some(chain_certifier) => {
             if certifier != chain_certifier.clone() {
                 return Ok(false);
@@ -751,7 +753,7 @@ fn is_valid_chain(chain: CertificationChain, certified: Equipment, certifier: Eq
         }
         None => return Ok(false), // ignore empty chains
     };
-    match chain.chain_certified() {
+    match chain.chain_certified() { // is chain certified the one we want
         Some(chain_certified) => {
             if certified != chain_certified.clone() {
                 return Ok(false);
@@ -762,6 +764,7 @@ fn is_valid_chain(chain: CertificationChain, certified: Equipment, certifier: Eq
     chain.is_valid()
 }
 
+// filter valid certificates
 fn verify_certificates(knowledge: Vec<Certificate>) -> Vec<Certificate> {
     knowledge.into_iter().filter(|certificate| {
         match certificate.is_valid() {

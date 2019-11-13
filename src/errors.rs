@@ -1,5 +1,6 @@
 extern crate failure;
 
+// custom result type
 pub type ResultSSL<T> = Result<T, SSLNetworkError>;
 
 #[derive(Debug, Fail)]

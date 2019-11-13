@@ -32,25 +32,25 @@ pub struct EquipmentNetwork {
 impl Network for EquipmentNetwork {
     fn new(root_eq: &Equipment) -> EquipmentNetwork {
         let mut graph = NetworkGraph::new();
-        let root_index = graph.add_node(root_eq.clone()).index();
+        let root_index = graph.add_node(root_eq.clone()).index(); // root_index is the index of simulated equipment in the network
         EquipmentNetwork {
             root_index,
             graph,
         }
     }
-    fn add_equipment(&mut self, equipment: &Equipment) -> usize {
+    fn add_equipment(&mut self, equipment: &Equipment) -> usize { // returns index of added equipment
         self.graph.add_node(equipment.clone()).index()
     }
     fn add_certificate(&mut self, certificate: &Certificate) -> ResultSSL<()> {
-        if !self.contains(certificate.subject()) {
+        if !self.contains(certificate.subject()) { // add subject node if not in the network
             self.add_equipment(certificate.subject());
         }
-        if !self.contains(certificate.issuer()) {
+        if !self.contains(certificate.issuer()) { // add issuer node if not in the network
             self.add_equipment(certificate.issuer());
         }
         let subject_index = self.get_node_index(certificate.subject()).ok_or(SSLNetworkError::EquipmentNotFound {})?;
         let issuer_index = self.get_node_index(certificate.issuer()).ok_or(SSLNetworkError::EquipmentNotFound {})?;
-        self.graph.add_edge(node_index(issuer_index), node_index(subject_index), certificate.clone());
+        self.graph.add_edge(node_index(issuer_index), node_index(subject_index), certificate.clone()); // add new certificate
         Ok(())
     }
 
@@ -70,8 +70,8 @@ impl Network for EquipmentNetwork {
     fn is_equipment_certified(&self, equipment: &Equipment) -> ResultSSL<bool> {
         let chain = match self.get_chain_certifications_from_root(equipment) {
             Ok(chain) => chain,
-            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false),
-            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false),
+            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false), // edge not found
+            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false), // node not found
             Err(e) => return Err(e),
         };
         match chain {
@@ -82,15 +82,15 @@ impl Network for EquipmentNetwork {
     fn is_equipment_directly_certified(&self, equipment: &Equipment) -> ResultSSL<bool> {
         let chain = match self.get_chain_certifications_from_root(equipment) {
             Ok(chain) => chain,
-            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false),
-            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false),
+            Err(SSLNetworkError::CertificateNotFound {}) => return Ok(false), // edge not found
+            Err(SSLNetworkError::EquipmentNotFound {}) => return Ok(false), // node not found
             Err(e) => return Err(e),
         };
         let chain = match chain {
             Some(chain) => chain,
             None => return Ok(false),
         };
-        if chain.0.len() != 1 {
+        if chain.0.len() != 1 { // test if chain length is greater that 1
             return Ok(false);
         }
         chain.is_valid()
@@ -127,13 +127,15 @@ impl Network for EquipmentNetwork {
 
     fn get_knowledge(&self) -> ResultSSL<Vec<Certificate>> {
         let mut certificates = vec![];
-        for certifier in self.graph.node_indices() {
-            for certified in self.graph.node_indices() {
+        for certifier in self.graph.node_indices() { // for each node
+            for certified in self.graph.node_indices() { // for each other node
                 if certifier != certified {
+                    // search edge between those two nodes
                     let certificate_index = match self.graph.find_edge(certifier, certified) {
                         Some(index) => index,
                         None => continue,
                     };
+                    // take certificate inside edge
                     let certificate = match self.graph.edge_weight(certificate_index) {
                         Some(certificate) => certificate,
                         None => continue,
@@ -174,8 +176,8 @@ impl EquipmentNetwork {
         None
     }
     fn get_chain_certifications(&self, certified: usize, certifier: usize) -> ResultSSL<Option<CertificationChain>> {
-        let root_index = node_index(certifier);
-        let goal_index = node_index(certified);
+        let root_index = node_index(certifier); // search from root
+        let goal_index = node_index(certified); // search to goal
         let mut predecessor = vec![NodeIndex::end(); self.graph.node_count()];
         depth_first_search(&self.graph, Some(root_index), |event| {
             if let DfsEvent::TreeEdge(u, v) = event {
@@ -186,15 +188,16 @@ impl EquipmentNetwork {
             }
             Control::Continue
         });
+        // after dfs, predecessor contains the indexes of the path nodes
         let mut node = goal_index;
         let mut chain = vec![];
-        while node != root_index {
+        while node != root_index { // start from goal and end on root
             let pred = predecessor[node.index()];
-            let certificate_index = match self.graph.find_edge(pred, node) {
+            let certificate_index = match self.graph.find_edge(pred, node) { // find edge
                 Some(index) => index,
                 None => return Ok(None)
             };
-            let certificate = match self.graph.edge_weight(certificate_index) {
+            let certificate = match self.graph.edge_weight(certificate_index) { // find certificate
                 Some(certificate) => certificate,
                 None => return Ok(None)
             };

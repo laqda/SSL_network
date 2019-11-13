@@ -80,6 +80,6 @@ fn start(matches: ArgMatches) -> Result<(), SSLNetworkError> {
 
     let eq = SimulatedEquipment::new(address, port, name)?;
     let mut shell = EquipmentShell::new(eq);
-    shell.0.run_loop(&mut ShellIO::default());
+    shell.0.run_loop(&mut ShellIO::default()); // launch interactive shell
     Ok(())
 }

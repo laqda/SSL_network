@@ -8,6 +8,7 @@ use crate::certification::{CertificationChain, PublicKey, Certificate};
 
 pub type Nonce = [u8; 32];
 
+// random number, use only once to make connection unique
 pub fn gen_nonce() -> Nonce {
     let mut buf = [0u8; 32];
     getrandom::getrandom(&mut buf).unwrap();
@@ -22,7 +23,7 @@ pub struct Packet {
 
 #[allow(non_camel_case_types)]
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type")] // add type parameter in JSON next to values to make payload type unique
 pub enum PacketTypes {
     // COMMON
     DISCOVER_SYN {
@@ -148,19 +149,19 @@ impl Packet {
         }
     }
     pub fn sign(mut self, server_nonce: &Nonce, client_nonce: &Nonce, eq_pri_key: &PKey<Private>) -> Packet {
-        let mut signer = Signer::new(MessageDigest::sha256(), eq_pri_key).unwrap();
-        signer.update(self.payload.as_bytes()).unwrap();
-        signer.update(server_nonce).unwrap();
-        signer.update(client_nonce).unwrap();
+        let mut signer = Signer::new(MessageDigest::sha256(), eq_pri_key).unwrap(); // use sha256 to hash content
+        signer.update(self.payload.as_bytes()).unwrap(); // add payload to sign content
+        signer.update(server_nonce).unwrap(); // add server nonce to sign content
+        signer.update(client_nonce).unwrap(); // add client nonce to sign content
         self.signature = Some(signer.sign_to_vec().unwrap());
         self
     }
     pub fn verify(&self, server_nonce: &Nonce, client_nonce: &Nonce, peer_pub_key: &PublicKey) -> ResultSSL<()> {
         let pub_key = PKey::public_key_from_pem(peer_pub_key).unwrap();
-        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
-        verifier.update(self.payload.as_bytes()).unwrap();
-        verifier.update(server_nonce).unwrap();
-        verifier.update(client_nonce).unwrap();
+        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap(); // use sha256 to hash content
+        verifier.update(self.payload.as_bytes()).unwrap(); // add payload to sign content
+        verifier.update(server_nonce).unwrap(); // add server nonce to sign content
+        verifier.update(client_nonce).unwrap(); // add client nonce to sign content
         match verifier.verify(self.signature.clone().ok_or(SSLNetworkError::ProtocolViolation {})?.as_ref()).unwrap() {
             true => Ok(()),
             false => Err(SSLNetworkError::InvalidSignature {})
